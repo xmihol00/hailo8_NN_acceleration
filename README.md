@@ -1,0 +1,1 @@
+# hailo8_NN_acceleration
