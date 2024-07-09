@@ -5,12 +5,17 @@
 #include <string>
 #include <iostream>
 #include <thread>
+#include <fstream>
+#include <iomanip>
+
+#include "weights.h"
 
 using namespace std;
 using namespace hailort;
 
 constexpr int INPUT_SIZE = 784;
 constexpr int OUTPUT_SIZE = 256;
+constexpr int NUM_SAMPLES = 10'000;
 
 unique_ptr<Device> configureDevice()
 {
@@ -73,44 +78,85 @@ pair<vector<InputVStream>, vector<OutputVStream>> configureStreams(ConfiguredNet
 
 void generateInputData(vector<InputVStream> &inputStreams)
 {
-    InputVStream &inputStream = inputStreams[0];
-    uint8_t value = 0;
-    for (int i = 0; i < 12; i++)
+    ifstream samplesFile("mnist_test_X.bin", ios::binary);
+    if (!samplesFile)
     {
-        vector<uint8_t> data(INPUT_SIZE);
-        for (int j = 0; j < INPUT_SIZE; j++)
-        {
-            data[j] = value++;
-        }
+        throw runtime_error("Failed to open input file.");
+    }
+    vector<uint8_t> samples(INPUT_SIZE * NUM_SAMPLES);
+    samplesFile.read(reinterpret_cast<char *>(samples.data()), samples.size());
 
-        hailo_status status = inputStream.write(MemoryView(data.data(), data.size()));
+    InputVStream &inputStream = inputStreams[0];
+    for (int i = 0; i < NUM_SAMPLES; i++)
+    {
+        hailo_status status = inputStream.write(MemoryView(samples.data() + i * INPUT_SIZE, INPUT_SIZE * sizeof(uint8_t)));
         if (status != HAILO_SUCCESS)
         {
             throw runtime_error("Failed to write input stream.");
         }
         cerr << "Input data " << i + 1 << " written." << endl;
     }
+
+    vector<uint8_t> padding(INPUT_SIZE);
+    for (int i = 0; i < 2'000; i++)
+    {
+        hailo_status status = inputStream.write(MemoryView(padding.data(), INPUT_SIZE * sizeof(uint8_t)));
+        if (status != HAILO_SUCCESS)
+        {
+            throw runtime_error("Failed to write input stream (padding).");
+        }
+    }
 }
 
-void retrieveOutputData(vector<OutputVStream> &outputStreams)
+void makePrediction(vector<OutputVStream> &outputStreams)
 {
+    ifstream groundTruthFile("mnist_test_y.bin", ios::binary);
+    if (!groundTruthFile)
+    {
+        throw runtime_error("Failed to open ground truth file.");
+    }
+    vector<uint8_t> labels(NUM_SAMPLES);
+    groundTruthFile.read(reinterpret_cast<char *>(labels.data()), labels.size());
+
     OutputVStream &outputStream = outputStreams[0];
     vector<float> data(OUTPUT_SIZE);
+    vector<float> prediction(10);
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < NUM_SAMPLES; i++)
     {
         hailo_status status = outputStream.read(MemoryView(data.data(), data.size() * sizeof(float)));
         if (status != HAILO_SUCCESS)
         {
             throw runtime_error("Failed to read output stream.");
         }
+        cerr << "Output data " << i + 1 << " read." << endl;
 
+        for (int j = 0; j < 10; j++)
+        {
+            prediction[j] = 0;
+        }
+
+        int weightsIndex = 0;
         for (int j = 0; j < OUTPUT_SIZE; j++)
         {
-            cout << data[j] << " ";
+            #pragma omp simd
+            for (int k = 0; k < 10; k++)
+            {
+                prediction[k] += data[j] * weights[weightsIndex++];
+            }
         }
-        cout << endl;
-        cerr << "Output data " << i + 1 << " read." << endl;
+
+        int maxIndex = 0;
+        int max = prediction[0];
+        for (int j = 1; j < 10; j++)
+        {
+            if (prediction[j] > max)
+            {
+                max = prediction[j];
+                maxIndex = j;
+            }
+        }
+        cout << "Prediction: " << maxIndex << " -- Label: " << static_cast<int>(labels[i]) << endl;
     }
 }
 
@@ -123,11 +169,21 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
     }
     cerr << "Model activated." << endl;
 
-    thread inputThread(generateInputData, ref(inputStreams));
-    thread outputThread(retrieveOutputData, ref(outputStreams));
+    #pragma omp parallel num_threads(2)
+    {
+        #pragma omp sections
+        {
+            #pragma omp section
+            {
+                generateInputData(inputStreams);
+            }
+            #pragma omp section
+            {
+                makePrediction(outputStreams);
+            }
+        }
+    }
 
-    inputThread.join();
-    outputThread.join();
     cerr << "Inference completed." << endl;
 }
 
