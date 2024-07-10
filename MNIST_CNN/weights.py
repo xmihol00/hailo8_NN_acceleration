@@ -1,7 +1,6 @@
 import tensorflow as tf
 from model import build_model, build_conv_only_model
 import numpy as np
-import idx2numpy as idx
 
 def weights_to_C_array(weights, name):
     weights_str = "{\n"
@@ -31,7 +30,7 @@ if __name__ == "__main__":
     
     print(f"Shapes of dense weights and biases: {dense_weights.shape}, {dense_biases.shape}")
 
-    ones = np.ones((1, 28, 28, 1))
+    ones = np.ones((1, 32, 32, 1))
     prediction = model.predict(ones)
     conv_only_prediction = conv_only_model.predict(ones)
     prediction_np = np.matmul(conv_only_prediction.flatten(), dense_weights) + dense_biases
@@ -51,10 +50,3 @@ if __name__ == "__main__":
         f.write("\n\n")
         f.write(weights_to_C_array(dense_biases, "biases"))
     
-    X_test = idx.convert_from_file("../../mnist_ML/mnist/t10k-images.idx3-ubyte") # download the dataset from http://yann.lecun.com/exdb/mnist/
-    X_test = X_test.reshape(-1, 28, 28, 1)
-
-    conv_only_prediction = conv_only_model.predict(X_test[:1])
-    print(conv_only_prediction.flatten())
-    conv_only_prediction = conv_only_model.predict(np.ones((1, 28, 28, 1)))
-    print(conv_only_prediction.flatten())
