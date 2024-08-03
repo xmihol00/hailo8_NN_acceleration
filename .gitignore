@@ -2,3 +2,6 @@ __pycache__/
 *.log
 *.bin
 inference
+hello
+drawing
+resNet/models
