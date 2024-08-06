@@ -4,6 +4,5 @@ __pycache__/
 inference
 hello
 drawing
-resNet/models
-resNet/lite
-resNet/tensorflow
+model_performance/models/
+model_performance/model_layers.txt

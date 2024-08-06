@@ -4,13 +4,13 @@ import time
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-l", "--layers", type=int, choices={34, 50})
+parser.add_argument("-m", "--model", type=str, choices={"resnet_v1_34", "resnet_v1_50", "mobilenet_v2"})
 args = parser.parse_args()
 
-tf_model = f'models/tf_resnet_v1_{args.layers}'
-tflite_model_name = f'models/resnet_v1_{args.layers}.tflite'
-checkpoint_dir = f'models/resnet_v1_{args.layers}'
-checkpoint_file = f'resnet_v1_{args.layers}.ckpt'
+tf_model = f'models/tf_{args.model}'
+tflite_model_name = f'models/{args.model}.tflite'
+checkpoint_dir = f'models/{args.model}'
+checkpoint_file = f'{args.model}.ckpt'
 BATCH_SIZE = 10
 
 with tf.compat.v1.Session() as sess:
@@ -23,21 +23,26 @@ with tf.compat.v1.Session() as sess:
         for op in graph.get_operations():
             print(op.name)
 
-    if args.layers == 50:
+    if args.model == "resnet_v1_50" or args.model == "mobilenet_v2":
         input_tensor = graph.get_tensor_by_name('input_image:0')
         is_training_tensor = graph.get_tensor_by_name('is_training:0')
-    else:
+        inputs = {'input_image': input_tensor, 'is_training': is_training_tensor}
+    elif args.model == "resnet_v1_34":
         input_tensor = graph.get_tensor_by_name('Placeholder:0')
+        inputs = {'Placeholder': input_tensor}
 
-    output_tensor = graph.get_tensor_by_name(f'resnet_v1_{args.layers}/predictions/Softmax:0')
+    if args.model == "resnet_v1_50" or args.model == "resnet_v1_34":
+        output_tensor = graph.get_tensor_by_name(f'{args.model}/predictions/Softmax:0')
+    elif args.model == "mobilenet_v2":
+        output_tensor = graph.get_tensor_by_name('MobilenetV2/Predictions/Softmax:0')
 
     input_data = np.random.randn(BATCH_SIZE, 224, 224, 3).astype(np.float32)
-    if args.layers == 50:
+    if args.model == "resnet_v1_50" or args.model == "mobilenet_v2":
         start = time.time()
         feed_dict = {input_tensor: input_data, is_training_tensor: False}
         output_data = sess.run(output_tensor, feed_dict=feed_dict)
         end = time.time()
-    else:
+    elif args.model == "resnet_v1_34":
         start = time.time()
         for i in range(BATCH_SIZE):
             feed_dict = {input_tensor: input_data[i:i+1]}
@@ -48,7 +53,7 @@ with tf.compat.v1.Session() as sess:
         tf.compat.v1.saved_model.simple_save(
             sess,
             tf_model,
-            inputs={'input_image': input_tensor, 'is_training': is_training_tensor} if args.layers == 50 else {'Placeholder': input_tensor},
+            inputs=inputs,
             outputs={'output': output_tensor}
         )
 

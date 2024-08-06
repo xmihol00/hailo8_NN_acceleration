@@ -79,7 +79,7 @@ void generateInputData(vector<InputVStream> &inputStreams)
     auto inputSize = inputStream.get_frame_size();
     vector<uint8_t> samples(inputSize, 1);
 
-    cout << "Starting input stream..." << endl;
+    cerr << "Starting input stream..." << endl;
     for (int i = 0; i < ITERATIONS; i++)
     {
         hailo_status status = inputStream.write(MemoryView(samples.data(), inputSize));
@@ -88,16 +88,16 @@ void generateInputData(vector<InputVStream> &inputStreams)
             throw runtime_error("Failed to write input stream.");
         }
     }
-    cout << "Input stream completed." << endl;
+    cerr << "Input stream completed." << endl;
 }
 
 void makePrediction(vector<OutputVStream> &outputStreams)
 {
     OutputVStream &outputStream = outputStreams[0];
-    cout << "Output frame size: " << outputStream.get_frame_size() << endl;
+    cerr << "Output frame size: " << outputStream.get_frame_size() << endl;
     vector<float> data(outputStream.get_frame_size() / sizeof(float));
 
-    cout << "Starting inference..." << endl;
+    cerr << "Starting inference..." << endl;
     auto start = chrono::high_resolution_clock::now();
     for (int i = 0; i < ITERATIONS; i++)
     {
@@ -108,7 +108,8 @@ void makePrediction(vector<OutputVStream> &outputStreams)
         }
     }
     auto end = chrono::high_resolution_clock::now();
-    cout << "Average inference time: " << chrono::duration<float, chrono::milliseconds::period>((end - start) / ITERATIONS).count() << " ms" << endl;
+    cout << "Average inference time: " << chrono::duration<float, chrono::milliseconds::period>((end - start) / ITERATIONS).count() << " ms, FPS: " 
+         << (ITERATIONS / chrono::duration<float, chrono::milliseconds::period>(end - start).count()) * 1000 << endl;
 }
 
 void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStreams, vector<OutputVStream> &outputStreams)
@@ -147,6 +148,7 @@ int main(int argc, char **argv)
     }
 
     string modelName = argv[1];
+    cout << "Model name: " << modelName << endl;
 
     unique_ptr<Device> device = configureDevice();
     shared_ptr<ConfiguredNetworkGroup> model = configureModel(*device, modelName);
