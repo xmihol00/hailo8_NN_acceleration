@@ -5,3 +5,5 @@ inference
 hello
 drawing
 resNet/models
+resNet/lite
+resNet/tensorflow

@@ -12,7 +12,7 @@ output_details = interpreter.get_output_details()
 
 data = np.ones((1, 512, 512, 3), dtype=np.float32)
 
-REPETITIONS = 100
+REPETITIONS = 10
 start = time.time()
 for _ in range(REPETITIONS):
     interpreter.set_tensor(input_details[0]['index'], data)
@@ -20,4 +20,4 @@ for _ in range(REPETITIONS):
     output = interpreter.get_tensor(output_details[0]['index'])
 end = time.time()
 
-print(f"Average inference time: {(end - start) / REPETITIONS} seconds")
+print(f"Average inference time: {(end - start) / REPETITIONS} seconds, FPS: {REPETITIONS / (end - start)}")
