@@ -6,3 +6,6 @@ hello
 drawing
 model_performance/models/
 model_performance/model_layers.txt
+yolov8/plates
+yolov8/models
+yolov8/datasets
