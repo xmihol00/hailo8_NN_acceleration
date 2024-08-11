@@ -1,4 +1,6 @@
 #include <iostream>
+#include <algorithm>
+
 #include <opencv2/opencv.hpp>
 #include <tensorflow/lite/interpreter.h>
 #include <tensorflow/lite/kernels/register.h>
@@ -10,44 +12,58 @@ using namespace std;
 
 const float CONFIDENCE_THRESHOLD = 0.5;
 
-cv::Mat preprocess(cv::Mat &frame, int input_width, int input_height)
+vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &interpreter)
 {
-    cv::Mat resized_frame;
-    cv::resize(frame, resized_frame, cv::Size(input_width, input_height));
-    resized_frame.convertTo(resized_frame, CV_32FC3, 1.0 / 255); // normalize to [0, 1]
-    return resized_frame;
-}
+    cerr << "Running inference" << endl;
 
-std::vector<cv::Rect> runInference(cv::Mat &frame, std::unique_ptr<tflite::Interpreter> &interpreter)
-{
-    int input_height = interpreter->tensor(interpreter->inputs()[0])->dims->data[1];
-    int input_width = interpreter->tensor(interpreter->inputs()[0])->dims->data[2];
-    cv::Mat input_frame = preprocess(frame, input_width, input_height);
+    // image dimensions    
+    int input_width = frame.cols;
+    int input_height = frame.rows;
 
-    // copy the input data into the input tensor
+    // transform and copy the input data into the input tensor
+    auto input_tensor = interpreter->inputs()[0];
     float *input = interpreter->typed_tensor<float>(interpreter->inputs()[0]);
-    memcpy(input, input_frame.data, input_width * input_height * 3 * sizeof(float));
+    for (int i = 0; i < input_width * input_height; i++)
+    {
+        // from HWC to CHW, normalize to [0, 1]
+        input[i] = frame.data[2 + i * 3] / 255.0;
+        input[i + input_width * input_height] = frame.data[1 + i * 3] / 255.0;
+        input[i + 2 * input_width * input_height] = frame.data[i * 3] / 255.0;
+    }
 
     // run inference
     interpreter->Invoke();
 
-    const float *output_boxes = interpreter->typed_output_tensor<float>(0);
-    const float *output_scores = interpreter->typed_output_tensor<float>(1);
-    const float *output_classes = interpreter->typed_output_tensor<float>(2);
+    const float *boxes = interpreter->typed_output_tensor<float>(0);
+    if (!boxes)
+    {
+        cerr << "Failed to retrieve output tensors." << endl;
+        exit(1);
+    }
 
     // retrieve detected boxes
-    std::vector<cv::Rect> detected_boxes;
-    for (int i = 0; i < interpreter->tensor(interpreter->outputs()[0])->dims->data[1]; ++i)
+    vector<cv::Rect> detected_boxes;
+    int dims1 = interpreter->tensor(interpreter->outputs()[0])->dims->data[1];
+    int dims2 = interpreter->tensor(interpreter->outputs()[0])->dims->data[2];
+    for (int i = 0; i < dims2; i++)
     {
-        if (output_scores[i] >= CONFIDENCE_THRESHOLD)
+        if (boxes[4 * dims2 + i] > CONFIDENCE_THRESHOLD)
         {
-            int x1 = static_cast<int>(output_boxes[i * 6 + 0] * frame.cols);
-            int y1 = static_cast<int>(output_boxes[i * 6 + 1] * frame.rows);
-            int x2 = static_cast<int>(output_boxes[i * 6 + 2] * frame.cols);
-            int y2 = static_cast<int>(output_boxes[i * 6 + 3] * frame.rows);
+            float s1 = boxes[i];
+            float s2 = boxes[dims2 + i];
+            float w = boxes[2 * dims2 + i] * 0.5;
+            float h = boxes[3 * dims2 + i] * 0.5;
+
+            // convert from center, width, height to top-left and right-bottom corners
+            int x1 = s1 - w;
+            int y1 = s2 - h;
+            int x2 = s1 + w;
+            int y2 = s2 + h;
             detected_boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Point(x2, y2)));
+            cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << endl;
         }
     }
+
     return detected_boxes;
 }
 
@@ -55,7 +71,7 @@ int main(int argc, char **argv)
 {
     // load the TFLite model
     const char *model_path = "models/yolov8m_plates_e05.tflite";
-    std::unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(model_path);
+    unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(model_path);
     if (!model)
     {
         cerr << "Failed to load model" << endl;
@@ -64,8 +80,8 @@ int main(int argc, char **argv)
 
     // build the interpreter
     tflite::ops::builtin::BuiltinOpResolver resolver;
-    std::unique_ptr<tflite::InterpreterBuilder> builder(new tflite::InterpreterBuilder(*model, resolver));
-    std::unique_ptr<tflite::Interpreter> interpreter;
+    unique_ptr<tflite::Interpreter> interpreter;
+    tflite::InterpreterBuilder builder(*model, resolver);
     builder(&interpreter);
 
     if (!interpreter)
@@ -86,10 +102,10 @@ int main(int argc, char **argv)
     while (cap.read(frame))
     {
         // run inference
-        std::vector<cv::Rect> detections = runInference(frame, interpreter);
+        vector<cv::Rect> boxes = runInference(frame, interpreter);
 
         // draw bounding boxes
-        for (const auto &rect : detections)
+        for (const auto &rect : boxes)
         {
             cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
         }

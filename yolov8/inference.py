@@ -1,8 +1,9 @@
 import cv2
 from ultralytics import YOLO
+import numpy as np
 
 model = YOLO("models/yolov8m_plates_e05.pt")
-video_path = "datasets/plates/sample_1s.mp4"
+video_path = "datasets/plates/sample_250ms.mp4"
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
@@ -14,15 +15,20 @@ while True:
     if not ret:
         break
 
+    #frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # convert BGR
+    print(frame.shape, frame.flatten()[:100]) # [47 75 60 40 68 53 32 58 43 28]  [0.2431, 0.2275, 0.1882, 0.1765, 0.1961, 0.2314, 0.2784, 0.3059, 0.2353, 0.1843]
+    frame = np.zeros_like(frame, dtype=np.uint8) + 127
+    print(frame.shape)
     results = model(frame) # perform inference on the frame
+    exit()
 
     # Loop through the detections and draw the bounding boxes
     for result in results:
-        print(vars(result), type(result))
+        #print(vars(result), type(result))
         boxes = result.boxes
-        print(vars(boxes))
+        #print(vars(boxes))
         for box in boxes:
-            print(vars(box))
+            #print(vars(box))
             exit()
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())  # extract bounding box coordinates
             conf = box.conf[0]  # confidence score
