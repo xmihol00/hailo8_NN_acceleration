@@ -70,8 +70,8 @@ vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &i
 int main(int argc, char **argv)
 {
     // load the TFLite model
-    const char *model_path = "models/yolov8m_plates_e05.tflite";
-    unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(model_path);
+    const char *modelPath = "models/yolov8m_plates_e05.tflite";
+    unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(modelPath);
     if (!model)
     {
         cerr << "Failed to load model" << endl;

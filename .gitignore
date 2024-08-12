@@ -10,3 +10,4 @@ yolov8/plates
 yolov8/models
 yolov8/datasets
 yolov8/build/
+yolov8/inference_hailo8
