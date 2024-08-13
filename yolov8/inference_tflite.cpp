@@ -116,6 +116,8 @@ int main(int argc, char **argv)
         {
             break;
         }
+
+        frame.release();
     }
 
     cap.release();

@@ -14,7 +14,7 @@ using namespace std;
 using namespace hailort;
 using namespace cv;
 
-constexpr int ITERATIONS = 100;
+constexpr int FRAME_SIZE = 640;
 
 unique_ptr<Device> configureDevice()
 {
@@ -75,45 +75,6 @@ pair<vector<InputVStream>, vector<OutputVStream>> configureStreams(ConfiguredNet
     return make_pair(move(expectedInputStreams.value()), move(expectedOutputStreams.value()));
 }
 
-void generateInputData(vector<InputVStream> &inputStreams)
-{
-    InputVStream &inputStream = inputStreams[0];
-    auto inputSize = inputStream.get_frame_size();
-    vector<uint8_t> samples(inputSize, 1);
-
-    cerr << "Starting input stream..." << endl;
-    for (int i = 0; i < ITERATIONS; i++)
-    {
-        hailo_status status = inputStream.write(MemoryView(samples.data(), inputSize));
-        if (status != HAILO_SUCCESS)
-        {
-            throw runtime_error("Failed to write input stream.");
-        }
-    }
-    cerr << "Input stream completed." << endl;
-}
-
-void makePrediction(vector<OutputVStream> &outputStreams)
-{
-    OutputVStream &outputStream = outputStreams[0];
-    cerr << "Output frame size: " << outputStream.get_frame_size() << endl;
-    vector<float> data(outputStream.get_frame_size() / sizeof(float));
-
-    cerr << "Starting inference..." << endl;
-    auto start = chrono::high_resolution_clock::now();
-    for (int i = 0; i < ITERATIONS; i++)
-    {
-        hailo_status status = outputStream.read(MemoryView(data.data(), data.size() * sizeof(float)));
-        if (status != HAILO_SUCCESS)
-        {
-            throw runtime_error("Failed to read output stream.");
-        }
-    }
-    auto end = chrono::high_resolution_clock::now();
-    cout << "Average inference time: " << chrono::duration<float, chrono::milliseconds::period>((end - start) / ITERATIONS).count() << " ms, FPS: " 
-         << (ITERATIONS / chrono::duration<float, chrono::milliseconds::period>(end - start).count()) * 1000 << endl;
-}
-
 void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStreams, vector<OutputVStream> &outputStreams, VideoCapture &capture)
 {
     Expected<unique_ptr<ActivatedNetworkGroup>> expectedActivatedModel = model.activate();
@@ -145,43 +106,62 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
             throw runtime_error("Failed to write input stream.");
         }
 
-        for (size_t i = 0; i < outputStreams.size(); i++)
+        OutputVStream &outputStream = outputStreams[0];
+        vector<float> output(outputStream.get_frame_size());
+        status = outputStream.read(MemoryView(output.data(), output.size()));
+        if (status != HAILO_SUCCESS)
         {
-            cerr << "Output " << i << " frame size: " << outputStreams[i].get_frame_size() << endl;
-            vector<float> data(outputStreams[i].get_frame_size() / sizeof(float));
-            hailo_status status = outputStreams[i].read(MemoryView(data.data(), data.size() * sizeof(float)));
-            if (status != HAILO_SUCCESS)
-            {
-                throw runtime_error("Failed to read output stream.");
-            }
-
-            cerr << "Output " << i << " data: ";
-            for (size_t j = 0; j < outputStreams[i].get_frame_size() / sizeof(float); j++)
-            {
-                cerr << data[j] << " ";
-            }
-            cerr << endl << endl;
+            throw runtime_error("Failed to read output stream.");
         }
 
-        // TODO: - extract bounding boxes from output data
-        //       - draw them on the frame
-        //       - display the frame
+        /*HailoROIPtr roi = std::make_shared<HailoROI>(HailoROI(HailoBBox(0.0f, 0.0f, 1.0f, 1.0f)));
+        roi->add_tensor(std::make_shared<HailoTensor>(reinterpret_cast<uint8_t *>(feature.m_buffers.data()), feature.m_vstream_info));
+        filter(roi, outputStream.name());
+        std::vector<HailoDetectionPtr> detections = hailo_common::get_hailo_detections(roi);
 
-        /*// run inference
-        vector<cv::Rect> boxes = runInference(frame, interpreter);
+        for (auto &detection : detections) 
+        {
+            cerr << "Confidence: " << detection->get_confidence() << endl;
+            cerr << "coordinates: " << detection->get_bbox().xmin() << " " << detection->get_bbox().ymin() << " " << detection->get_bbox().xmax() << " " << detection->get_bbox().ymax() << endl;
+            if (detection->get_confidence()==0) 
+            {
+                continue;
+            }
+
+            HailoBBox bbox = detection->get_bbox();
+        
+            cv::rectangle(frame, cv::Point2f(bbox.xmin() * float(frame.cols), bbox.ymin() * float(frame.rows)), 
+                        cv::Point2f(bbox.xmax() * float(frame.cols), bbox.ymax() * float(frame.rows)), 
+                        cv::Scalar(0, 0, 255), 1);
+            
+            std::cout << "Detection: " << detection->get_label() << ", Confidence: " << std::fixed << std::setprecision(2) << detection->get_confidence() * 100.0 << "%" << std::endl;
+        }*/
+        
+        int numberOfBoxes = static_cast<int>(output[0]);
+        float *boxes = output.data() + 1;
 
         // draw bounding boxes
-        for (const auto &rect : boxes)
+        for (int i = 0; i < numberOfBoxes; i++)
         {
+            int x1 = boxes[i] * frame.cols;
+            int y1 = boxes[i + 1] * frame.rows;
+            int x2 = boxes[i + 2] * frame.cols;
+            int y2 = boxes[i + 3] * frame.rows;
+
+            cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
             cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
+            cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << endl;
         }
+        cerr << endl;
 
         cv::imshow("YOLOv8 License Plate Detection", frame);
 
-        if (cv::waitKey(1) == 'q')
+        if (cv::waitKey(5) == 'q')
         {
             break;
-        }*/
+        }
+
+        frame.release();
     }
 
     cerr << "Inference completed." << endl;
@@ -204,7 +184,7 @@ int main(int argc, char **argv)
     vector<OutputVStream> outputStreams;
     tie(inputStreams, outputStreams) = configureStreams(*model);
 
-    VideoCapture capture("datasets/plates/sample_250ms.mp4");
+    VideoCapture capture("../datasets/plates/sample_250ms.mp4");
     if (!capture.isOpened())
     {
         cerr << "Error: Could not open video." << endl;
