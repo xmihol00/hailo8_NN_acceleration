@@ -1,0 +1,11 @@
+name,type,image size,time [s],FPS
+ResNet18,tflite,512x512x3,0.87895,1.1377
+ResNet34,tf,224x224x3,0.04694,21.3016
+ResNet34,tflite,224x224x3,0.15691,6.373
+ResNet50,tf,224x224x3,0.06936,14.4173
+ResNet50,tflite,224x224x3,0.14675,6.8139
+MobilenetV2,tf,224x224x3,0.04601,21.7317
+MobilenetV2,tflite,224x224x3,0.05247,19.0562
+MobilenetV3,tflite,224x224x3,0.04207,23.7716
+InceptionV1,tflite,224x224x3,0.06467,15.4633
+EfficientNetLiteV0,tflite,224x224x3,0.02008,49.8053

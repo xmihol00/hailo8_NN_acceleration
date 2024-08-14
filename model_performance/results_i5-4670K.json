@@ -3,70 +3,70 @@
         "name": "ResNet18",
         "type": "tflite",
         "image size": "512x512x3",
-        "time": 0.87895,
+        "time [s]": 0.87895,
         "FPS": 1.1377
     },
     {
         "name": "ResNet34",
         "type": "tf",
         "image size": "224x224x3",
-        "time": 0.04694,
+        "time [s]": 0.04694,
         "FPS": 21.3016
     },
     {
         "name": "ResNet34",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.15691,
+        "time [s]": 0.15691,
         "FPS": 6.3730
     },
     {
         "name": "ResNet50",
         "type": "tf",
         "image size": "224x224x3",
-        "time": 0.06936,
+        "time [s]": 0.06936,
         "FPS": 14.4173
     },
     {
         "name": "ResNet50",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.14675,
+        "time [s]": 0.14675,
         "FPS": 6.8139
     },
     {
         "name": "MobilenetV2",
         "type": "tf",
         "image size": "224x224x3",
-        "time": 0.04601,
+        "time [s]": 0.04601,
         "FPS": 21.7317
     },
     {
         "name": "MobilenetV2",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.05247,
+        "time [s]": 0.05247,
         "FPS": 19.0562
     },
     {
         "name": "MobilenetV3",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.04207,
+        "time [s]": 0.04207,
         "FPS": 23.7716
     },
     {
         "name": "InceptionV1",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.06467,
+        "time [s]": 0.06467,
         "FPS": 15.4633
     },
     {
         "name": "EfficientNetLiteV0",
         "type": "tflite",
         "image size": "224x224x3",
-        "time": 0.02008,
+        "time [s]": 0.02008,
         "FPS": 49.8053
     }
 ]

@@ -1,20 +1,16 @@
-Output frame size: 4000
-Starting inference...
-Starting input stream...
-Input stream completed.
-Average inference time: 1.19171 ms, FPS: 839.13
-Output frame size: 4000
-Starting inference...
-Starting input stream...
-Input stream completed.
-Average inference time: 1.31789 ms, FPS: 758.789
-Output frame size: 4004
-Starting inference...
-Starting input stream...
-Input stream completed.
-Average inference time: 0.568465 ms, FPS: 1759.12
-Starting input stream...
-Output frame size: 4004
-Starting inference...
-Input stream completed.
-Average inference time: 0.568173 ms, FPS: 1760.02
+Model name: resnet_v1_34.hef
+Average inference time: 1.20022 ms, FPS: 833.18
+Model name: resnet_v1_50.hef
+Average inference time: 1.32662 ms, FPS: 753.796
+Model name: mobilenet_v2_1.0.hef
+Average inference time: 0.620785 ms, FPS: 1610.86
+Model name: mobilenet_v3.hef
+Average inference time: 0.583752 ms, FPS: 1713.05
+Model name: efficientnet_lite0.hef
+Average inference time: 0.720276 ms, FPS: 1388.35
+Model name: inception_v1.hef
+Average inference time: 1.1998 ms, FPS: 833.472
+Model name: regnetx_1.6gf.hef
+Average inference time: 0.677403 ms, FPS: 1476.23
+Model name: vit_base_bn.hef
+Average inference time: 178.836 ms, FPS: 5.59172

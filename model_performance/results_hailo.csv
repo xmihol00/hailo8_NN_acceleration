@@ -1,0 +1,9 @@
+name,type,image size,time [ms],FPS
+ResNet34,hailo8,224x224x3,1.20022,833.18
+ResNet50,hailo8,224x224x3,1.32662,753.796
+MobilenetV2,hailo8,224x224x3,0.620785,1610.86
+MobilenetV3,hailo8,224x224x3,0.583752,1713.05
+InceptionV1,hailo8,224x224x3,1.1998,833.472
+EfficientNetLiteV0,hailo8,224x224x3,0.720276,1388.35
+VitBaseBn,hailo8,224x224x3,178.836,5.59172
+RegNetx1.6gf,hailo8,224x224x3,0.677403,1476.23
