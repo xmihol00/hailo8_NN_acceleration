@@ -52,8 +52,6 @@ while True:
     inputs[0, 1] = input_data[0, :, :, 1]
     inputs[0, 2] = input_data[0, :, :, 0]
 
-    print(input_data.shape, inputs.flatten()[:10], inputs.flatten()[640*640: 640*640 + 10], inputs.flatten()[2*640*640:2*640*640 + 10]) # [    0.24314     0.22745     0.18824     0.17647     0.19608     0.23137     0.27843     0.30588     0.23529     0.18431] [     0.2902     0.27451     0.23529     0.22353     0.24314     0.27843     0.34118     0.36863      0.3098     0.25882] [    0.21961     0.20392     0.16471     0.15294     0.17255     0.20784     0.26667     0.29412     0.23137     0.18039]
-
     # Set the input tensor
     interpreter.set_tensor(input_details[0]['index'], inputs)
 
