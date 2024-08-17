@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
 #include <tensorflow/lite/interpreter.h>
@@ -10,9 +11,46 @@
 using namespace cv;
 using namespace std;
 
-const float CONFIDENCE_THRESHOLD = 0.5;
+struct Arguments
+{
+    string modelPath;
+    string videoPath;
+    int delay;
+    float confidenceThreshold;
+};
 
-vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &interpreter)
+Arguments parseArgs(int argc, char **argv)
+{
+    Arguments args;
+    args.modelPath = "../models/yolov8m_plates_e25.tflite";
+    args.videoPath = "../datasets/plates/test_img_per_frame.mp4";
+    args.delay = 1;
+    args.confidenceThreshold = 0.5;
+
+    for (int i = 1; i < argc - 1; i++) // ensure that the next argument can be always read
+    {
+        if (string(argv[i]) == "--model" || string(argv[i]) == "-m")
+        {
+            args.modelPath = argv[++i];
+        }
+        else if (string(argv[i]) == "--video" || string(argv[i]) == "-v")
+        {
+            args.videoPath = argv[++i];
+        }
+        else if (string(argv[i]) == "--delay" || string(argv[i]) == "-d")
+        {
+            args.delay = stoi(argv[++i]);
+        }
+        else if (string(argv[i]) == "--confidence" || string(argv[i]) == "-c")
+        {
+            args.confidenceThreshold = stof(argv[++i]);
+        }
+    }
+
+    return args;
+}
+
+vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &interpreter, float confidenceThreshold)
 {
     cerr << "Running inference" << endl;
 
@@ -47,7 +85,7 @@ vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &i
     int dims2 = interpreter->tensor(interpreter->outputs()[0])->dims->data[2];
     for (int i = 0; i < dims2; i++)
     {
-        if (boxes[4 * dims2 + i] > CONFIDENCE_THRESHOLD)
+        if (boxes[4 * dims2 + i] > confidenceThreshold)
         {
             float s1 = boxes[i];
             float s2 = boxes[dims2 + i];
@@ -60,7 +98,7 @@ vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &i
             int x2 = s1 + w;
             int y2 = s2 + h;
             detected_boxes.emplace_back(cv::Rect(cv::Point(x1, y1), cv::Point(x2, y2)));
-            cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << endl;
+            cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << " with confidence: " << boxes[4 * dims2 + i] << endl;
         }
     }
 
@@ -69,9 +107,10 @@ vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &i
 
 int main(int argc, char **argv)
 {
+    Arguments args = parseArgs(argc, argv);
+
     // load the TFLite model
-    const char *modelPath = "models/yolov8m_plates_e05.tflite";
-    unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(modelPath);
+    unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(args.modelPath.c_str());
     if (!model)
     {
         cerr << "Failed to load model" << endl;
@@ -91,18 +130,19 @@ int main(int argc, char **argv)
     }
     interpreter->AllocateTensors();
 
-    cv::VideoCapture cap("datasets/plates/sample_250ms.mp4");
+    cv::VideoCapture cap(args.videoPath);
     if (!cap.isOpened())
     {
         cerr << "Error: Could not open video." << endl;
         return -1;
     }
 
+    auto start = chrono::high_resolution_clock::now();
     cv::Mat frame;
     while (cap.read(frame))
     {
         // run inference
-        vector<cv::Rect> boxes = runInference(frame, interpreter);
+        vector<cv::Rect> boxes = runInference(frame, interpreter, args.confidenceThreshold);
 
         // draw bounding boxes
         for (const auto &rect : boxes)
@@ -110,15 +150,21 @@ int main(int argc, char **argv)
             cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
         }
 
-        cv::imshow("YOLOv8 License Plate Detection", frame);
-
-        if (cv::waitKey(1) == 'q')
+        if (args.delay > 0)
         {
-            break;
+            cv::imshow("YOLOv8 License Plate Detection", frame);
+
+            
+            if (cv::waitKey(args.delay) == 'q')
+            {
+                break;
+            }
         }
 
         frame.release();
     }
+    auto end = chrono::high_resolution_clock::now();
+    cout << "Inference completed in " << chrono::duration_cast<chrono::milliseconds>(end - start).count() / 1000.0f << " seconds." << endl;
 
     cap.release();
     cv::destroyAllWindows();

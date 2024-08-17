@@ -14,7 +14,44 @@ using namespace std;
 using namespace hailort;
 using namespace cv;
 
-constexpr int FRAME_SIZE = 640;
+struct Arguments
+{
+    string modelPath;
+    string videoPath;
+    int delay;
+    float confidenceThreshold;
+};
+
+Arguments parseArgs(int argc, char **argv)
+{
+    Arguments args;
+    args.modelPath = "models/yolov8m_plates_e25.hef";
+    args.videoPath = "datasets/plates/test_img_per_frame.mp4";
+    args.delay = 1;
+    args.confidenceThreshold = 0.5;
+
+    for (int i = 1; i < argc - 1; i++) // ensure that the next argument can be always read
+    {
+        if (string(argv[i]) == "--model" || string(argv[i]) == "-m")
+        {
+            args.modelPath = argv[++i];
+        }
+        else if (string(argv[i]) == "--video" || string(argv[i]) == "-v")
+        {
+            args.videoPath = argv[++i];
+        }
+        else if (string(argv[i]) == "--delay" || string(argv[i]) == "-d")
+        {
+            args.delay = stoi(argv[++i]);
+        }
+        else if (string(argv[i]) == "--confidence" || string(argv[i]) == "-c")
+        {
+            args.confidenceThreshold = stof(argv[++i]);
+        }
+    }
+
+    return args;
+}
 
 unique_ptr<Device> configureDevice()
 {
@@ -75,8 +112,9 @@ pair<vector<InputVStream>, vector<OutputVStream>> configureStreams(ConfiguredNet
     return make_pair(move(expectedInputStreams.value()), move(expectedOutputStreams.value()));
 }
 
-void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStreams, vector<OutputVStream> &outputStreams, VideoCapture &capture)
+void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStreams, vector<OutputVStream> &outputStreams, VideoCapture &capture, Arguments &args)
 {
+    // activate model
     Expected<unique_ptr<ActivatedNetworkGroup>> expectedActivatedModel = model.activate();
     if (!expectedActivatedModel)
     {
@@ -85,27 +123,19 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
     cerr << "Model activated." << endl;
 
     cv::Mat frame;
-    while (capture.read(frame))
+    while (capture.read(frame)) // read video frame by frame
     {
         InputVStream &inputStream = inputStreams[0];
         size_t inputSize = inputStream.get_frame_size();
-        vector<uint8_t> samples(inputSize);
 
-        // transform from HWC to CHW, normalize to [0, 1]
-        for (int i = 0; i < frame.cols * frame.rows; i++)
-        {
-            samples[i] = frame.data[2 + i * 3];
-            samples[i + frame.cols * frame.rows] = frame.data[1 + i * 3];
-            samples[i + 2 * frame.cols * frame.rows] = frame.data[i * 3];
-        }
-
-        // write input data
-        hailo_status status = inputStream.write(MemoryView(samples.data(), inputSize));
+        // write input data to hailo8
+        hailo_status status = inputStream.write(MemoryView(frame.data, inputSize));
         if (status != HAILO_SUCCESS)
         {
             throw runtime_error("Failed to write input stream.");
         }
 
+        // read output data from hailo8
         OutputVStream &outputStream = outputStreams[0];
         vector<float> output(outputStream.get_frame_size());
         status = outputStream.read(MemoryView(output.data(), output.size()));
@@ -114,51 +144,35 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
             throw runtime_error("Failed to read output stream.");
         }
 
-        /*HailoROIPtr roi = std::make_shared<HailoROI>(HailoROI(HailoBBox(0.0f, 0.0f, 1.0f, 1.0f)));
-        roi->add_tensor(std::make_shared<HailoTensor>(reinterpret_cast<uint8_t *>(feature.m_buffers.data()), feature.m_vstream_info));
-        filter(roi, outputStream.name());
-        std::vector<HailoDetectionPtr> detections = hailo_common::get_hailo_detections(roi);
-
-        for (auto &detection : detections) 
-        {
-            cerr << "Confidence: " << detection->get_confidence() << endl;
-            cerr << "coordinates: " << detection->get_bbox().xmin() << " " << detection->get_bbox().ymin() << " " << detection->get_bbox().xmax() << " " << detection->get_bbox().ymax() << endl;
-            if (detection->get_confidence()==0) 
-            {
-                continue;
-            }
-
-            HailoBBox bbox = detection->get_bbox();
-        
-            cv::rectangle(frame, cv::Point2f(bbox.xmin() * float(frame.cols), bbox.ymin() * float(frame.rows)), 
-                        cv::Point2f(bbox.xmax() * float(frame.cols), bbox.ymax() * float(frame.rows)), 
-                        cv::Scalar(0, 0, 255), 1);
-            
-            std::cout << "Detection: " << detection->get_label() << ", Confidence: " << std::fixed << std::setprecision(2) << detection->get_confidence() * 100.0 << "%" << std::endl;
-        }*/
-        
+        // parse output data
         int numberOfBoxes = static_cast<int>(output[0]);
         float *boxes = output.data() + 1;
 
         // draw bounding boxes
-        for (int i = 0; i < numberOfBoxes; i++)
+        for (int i = 0; i < numberOfBoxes; i += 5)
         {
-            int x1 = boxes[i] * frame.cols;
-            int y1 = boxes[i + 1] * frame.rows;
-            int x2 = boxes[i + 2] * frame.cols;
-            int y2 = boxes[i + 3] * frame.rows;
+            if (boxes[i + 4] > args.confidenceThreshold)
+            {
+                int y1 = boxes[i] * frame.cols;
+                int x1 = boxes[i + 1] * frame.rows;
+                int y2 = boxes[i + 2] * frame.cols;
+                int x2 = boxes[i + 3] * frame.rows;
 
-            cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
-            cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
-            cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << endl;
+                cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
+                cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
+                cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << " with confidence: " << boxes[i + 4] << endl;
+            }
         }
         cerr << endl;
 
-        cv::imshow("YOLOv8 License Plate Detection", frame);
-
-        if (cv::waitKey(5) == 'q')
+        if (args.delay > 0)
         {
-            break;
+            cv::imshow("YOLOv8 License Plate Detection", frame);
+
+            if (cv::waitKey(args.delay) == 'q')
+            {
+                break;
+            }
         }
 
         frame.release();
@@ -169,29 +183,26 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
 
 int main(int argc, char **argv)
 {
-    if (argc != 2)
-    {
-        cerr << "Usage: " << argv[0] << " <model.hef>" << endl;
-        return 1;
-    }
-
-    string modelName = argv[1];
-    cout << "Model name: " << modelName << endl;
+    Arguments args = parseArgs(argc, argv);
 
     unique_ptr<Device> device = configureDevice();
-    shared_ptr<ConfiguredNetworkGroup> model = configureModel(*device, modelName);
+    shared_ptr<ConfiguredNetworkGroup> model = configureModel(*device, args.modelPath);
     vector<InputVStream> inputStreams;
     vector<OutputVStream> outputStreams;
     tie(inputStreams, outputStreams) = configureStreams(*model);
 
-    VideoCapture capture("../datasets/plates/sample_250ms.mp4");
+    VideoCapture capture(args.videoPath);
     if (!capture.isOpened())
     {
         cerr << "Error: Could not open video." << endl;
         return -1;
     }
     
-    runInference(*model, inputStreams, outputStreams, capture);
+    auto start = chrono::high_resolution_clock::now();
+    runInference(*model, inputStreams, outputStreams, capture, args);
+    auto end = chrono::high_resolution_clock::now();
+    cout << "Inference completed in " << chrono::duration_cast<chrono::milliseconds>(end - start).count() / 1000.0f << " seconds." << endl;
+    
     capture.release();
     cv::destroyAllWindows();
 

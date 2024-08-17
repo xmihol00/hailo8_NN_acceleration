@@ -1,89 +1,86 @@
 import tensorflow as tf
 import cv2
 import numpy as np
-from ultralytics.utils.ops import non_max_suppression
 import torch
+import argparse
+import time
 
-def boxes(
-    prediction,
-    conf_thres=0.25,
-):
+def boxes(prediction, conf_thres=0.25):
     xc = prediction[:, 4:5].amax(1) > conf_thres  # candidates
-    prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+
+    prediction = prediction.transpose(-1, -2)  # sort values in the tensor
     y = torch.empty_like(prediction[..., :4])
     xy = prediction[..., :2]  # centers
     wh = prediction[..., 2:4] / 2  # half width-height
     y[..., :2] = xy - wh  # top left xy
     y[..., 2:] = xy + wh  # bottom right xy
-    x = y[0, xc[0]]  # confidence
+    x = y[0, xc[0]]       # pick based on confidence
     return x
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-m", "--model", type=str, default="models/yolov8m_plates_e25.tflite", help="Path to the model file")
+parser.add_argument("-v", "--video", type=str, default="datasets/plates/test_img_per_frame.mp4", help="Path to the video file")
+parser.add_argument("-d", "--delay", type=int, default=1, help="Delay between frames, 0 means do not show output video.")
+parser.add_argument("-c", "--confidence", type=float, default=0.5, help="Confidence threshold")
 
-# Load TFLite model and allocate tensors.
-interpreter = tf.lite.Interpreter(model_path="models/yolov8m_plates_e05.tflite")
+args = parser.parse_args()
+
+# load TFLite model and allocate tensors.
+interpreter = tf.lite.Interpreter(model_path=args.model)
 interpreter.allocate_tensors()
 
-# Get input and output tensors.
+# get input and output tensors.
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# Load the video
-video_path = "datasets/plates/sample_250ms.mp4"
-cap = cv2.VideoCapture(video_path)
+cap = cv2.VideoCapture(args.video)
 
 if not cap.isOpened():
     print("Error: Could not open video.")
     exit()
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+start = time.time()
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    # Normalize the frame
-    frame_normalized = frame / 255.0
+        # normalize the frame
+        frame_normalized = frame / 255.0
 
-    # Add a batch dimension
-    input_data = tf.expand_dims(frame_normalized, axis=0)
-    input_data = tf.cast(input_data, tf.float32)
-    #input_data = tf.transpose(input_data, perm=[0, 3, 1, 2])
-    inputs = np.zeros((1, 3, 640, 640), dtype=np.float32)
-    inputs[0, 0] = input_data[0, :, :, 2]
-    inputs[0, 1] = input_data[0, :, :, 1]
-    inputs[0, 2] = input_data[0, :, :, 0]
+        # add a batch dimension
+        input_data = tf.expand_dims(frame_normalized, axis=0)
+        input_data = tf.cast(input_data, tf.float32)
+        inputs = np.zeros((1, 3, 640, 640), dtype=np.float32)
 
-    # Set the input tensor
-    interpreter.set_tensor(input_details[0]['index'], inputs)
+        # convert the image from WHC to CHW
+        inputs[0, 0] = input_data[0, :, :, 2]
+        inputs[0, 1] = input_data[0, :, :, 1]
+        inputs[0, 2] = input_data[0, :, :, 0]
 
-    # Perform inference
-    interpreter.invoke()
+        # set the input tensor
+        interpreter.set_tensor(input_details[0]['index'], inputs)
 
-    # Get the output tensor
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-    max_conf = output_data[:, 4] > 0.5
-    #print(max_conf, max_conf.shape)
-    output_data = torch.from_numpy(output_data)
-    results = boxes(output_data, 0.5)
-    #nms = non_max_suppression(output_data, 0.5, 0.5)
-    
-    for result in results:
-        x1, y1, x2, y2 = map(int, result[:4])
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    # Loop through the detections and draw the bounding boxes
-    #for result in nms:
-    #    for box in result:
-    #        x1, y1, x2, y2 = map(int, box[:4])  # extract bounding box coordinates
-    #        conf = box[4]  # confidence score
-    #        if conf > 0.5:
-    #            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green bounding box
-    #            label = f"Plate {conf:.2f}"
-    #            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        # perform inference
+        interpreter.invoke()
 
-    # Display the frame with bounding boxes
-    cv2.imshow("YOLOv8 License Plate Detection", frame)
+        # get the output tensor
+        output_data = interpreter.get_tensor(output_details[0]['index'])
+        output_data = torch.from_numpy(output_data)
+        results = boxes(output_data, args.confidence)
+        
+        for result in results: # draw bounding boxes
+            x1, y1, x2, y2 = map(int, result[:4])
+            print(f"Detected box at: ({x1}, {y1}) ({x2}, {y2})")
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        if args.delay > 0:
+            cv2.imshow("YOLOv8 License Plate Detection", frame)
 
-    # Break the loop if 'q' is pressed
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+except KeyboardInterrupt:
+    pass
+end = time.time()
+print(f"\nInference completed in {end - start:.4f} seconds")
