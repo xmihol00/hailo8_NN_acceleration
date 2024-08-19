@@ -24,7 +24,8 @@ try:
         ret, frame = cap.read()
         if not ret:
             break
-
+        
+        start_sample = time.time()
         results = model(frame) # perform inference on the frame
 
         # loop through the detections and draw the bounding boxes
@@ -34,9 +35,14 @@ try:
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())  # extract bounding box coordinates
                 conf = box.conf[0]  # confidence score
                 if conf > args.confidence:
+                    print(f"Detected box at: ({x1}, {y1}) ({x2}, {y2})")
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2) # green bounding box
                     label = f"Plate {conf:.2f}"
                     cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        end_sample = time.time()
+        print(f"Processed frame in {(end_sample - start_sample) * 1000:.3f} ms.", end="\n\n")
+
 
         if args.delay > 0:
             # display the frame with bounding boxes
@@ -49,7 +55,7 @@ except KeyboardInterrupt:
     pass
 
 end = time.time()
-print(f"\nInference completed in {end - start:.4f} seconds")
+print(f"\nInference completed in {end - start:.4f} s.")
 
 cap.release()
 cv2.destroyAllWindows()

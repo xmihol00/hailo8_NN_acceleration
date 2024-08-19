@@ -45,6 +45,8 @@ try:
         ret, frame = cap.read()
         if not ret:
             break
+        
+        start_sample = time.time()
 
         # normalize the frame
         frame_normalized = frame / 255.0
@@ -75,6 +77,9 @@ try:
             print(f"Detected box at: ({x1}, {y1}) ({x2}, {y2})")
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
+        end_sample = time.time()
+        print(f"Processed frame in {(end_sample - start_sample) * 1000:.3f} ms.", end="\n\n")
+        
         if args.delay > 0:
             cv2.imshow("YOLOv8 License Plate Detection", frame)
 
@@ -83,4 +88,4 @@ try:
 except KeyboardInterrupt:
     pass
 end = time.time()
-print(f"\nInference completed in {end - start:.4f} seconds")
+print(f"\nInference completed in {end - start:.4f} s.")
