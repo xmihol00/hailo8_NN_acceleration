@@ -1,0 +1,3 @@
+Average IoU
+    Python: 0.8171
+    Hailo8: TODO
