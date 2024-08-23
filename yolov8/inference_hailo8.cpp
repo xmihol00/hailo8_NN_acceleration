@@ -125,6 +125,8 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
     cv::Mat frame;
     while (capture.read(frame)) // read video frame by frame
     {
+        auto start = chrono::high_resolution_clock::now();
+
         InputVStream &inputStream = inputStreams[0];
         size_t inputSize = inputStream.get_frame_size();
 
@@ -163,6 +165,9 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
                 cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << " with confidence: " << boxes[i + 4] << endl;
             }
         }
+
+        auto end = chrono::high_resolution_clock::now();
+        cout << "Processed frame in " << chrono::duration_cast<chrono::microseconds>(end - start).count() / 1000.0f << " ms." << endl;
         cerr << endl;
 
         if (args.delay > 0)

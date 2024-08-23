@@ -53,6 +53,7 @@ Arguments parseArgs(int argc, char **argv)
 vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &interpreter, float confidenceThreshold)
 {
     cerr << "Running inference" << endl;
+    auto start = chrono::high_resolution_clock::now();
 
     // image dimensions    
     int input_width = frame.cols;
@@ -101,6 +102,9 @@ vector<cv::Rect> runInference(cv::Mat &frame, unique_ptr<tflite::Interpreter> &i
             cerr << "Detected box: " << x1 << "x" << y1 << " " << x2 << "x" << y2 << " with confidence: " << boxes[4 * dims2 + i] << endl;
         }
     }
+
+    auto end = chrono::high_resolution_clock::now();
+    cout << "Processed frame in " << chrono::duration_cast<chrono::microseconds>(end - start).count() / 1000.0f << " ms." << endl;
 
     return detected_boxes;
 }
