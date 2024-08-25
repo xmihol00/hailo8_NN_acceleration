@@ -32,6 +32,6 @@ for i, labelPath in enumerate(glob.glob("datasets/plates/test/labels/*.txt")):
 
     print(coordinates_gt_xyxy, coordinates_pred)
     iou = box_iou(torch.tensor(coordinates_gt_xyxy), torch.tensor(coordinates_pred))
-    total_iou += iou.mean().item()
+    total_iou += iou.max(dim=1).values.mean().item()
 
 print(f"Average IoU: {total_iou / (i + 1):.4f}")

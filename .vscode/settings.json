@@ -65,6 +65,9 @@
         "thread": "cpp",
         "cfenv": "cpp",
         "cinttypes": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "hash_map": "cpp",
+        "span": "cpp",
+        "valarray": "cpp"
     }
 }
