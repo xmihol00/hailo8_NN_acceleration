@@ -22,8 +22,11 @@ parser.add_argument("-m", "--model", type=str, default="models/yolov8m_plates_e2
 parser.add_argument("-v", "--video", type=str, default="datasets/plates/test_img_per_frame.mp4", help="Path to the video file")
 parser.add_argument("-d", "--delay", type=int, default=1, help="Delay between frames, 0 means do not show output video.")
 parser.add_argument("-c", "--confidence", type=float, default=0.5, help="Confidence threshold")
+parser.add_argument("-q", "--quantized", action="store_true", help="Quantized model")
 
 args = parser.parse_args()
+
+quantized = "quantized" in args.model or args.quantized
 
 # load TFLite model and allocate tensors.
 interpreter = tf.lite.Interpreter(model_path=args.model)
@@ -32,6 +35,9 @@ interpreter.allocate_tensors()
 # get input and output tensors.
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
+print(input_details)
+print()
+print(output_details)
 
 cap = cv2.VideoCapture(args.video)
 
@@ -48,18 +54,21 @@ try:
         
         start_sample = time.time()
 
-        # normalize the frame
-        frame_normalized = frame / 255.0
+        if quantized:
+            frame_normalized = frame.astype(np.int16) - 128
+            inputs = np.zeros((1, 3, 640, 640), dtype=np.int8)
+            input_data = tf.cast(frame_normalized, tf.int8)
+        else:
+            # normalize the frame
+            frame_normalized = frame / 255.0
+            inputs = np.zeros((1, 3, 640, 640), dtype=np.float32)
+            input_data = tf.cast(frame_normalized, tf.float32)
 
-        # add a batch dimension
-        input_data = tf.expand_dims(frame_normalized, axis=0)
-        input_data = tf.cast(input_data, tf.float32)
-        inputs = np.zeros((1, 3, 640, 640), dtype=np.float32)
 
         # convert the image from WHC to CHW
-        inputs[0, 0] = input_data[0, :, :, 2]
-        inputs[0, 1] = input_data[0, :, :, 1]
-        inputs[0, 2] = input_data[0, :, :, 0]
+        inputs[0, 0] = input_data[:, :, 2]
+        inputs[0, 1] = input_data[:, :, 1]
+        inputs[0, 2] = input_data[:, :, 0]
 
         # set the input tensor
         interpreter.set_tensor(input_details[0]['index'], inputs)
@@ -70,6 +79,7 @@ try:
         # get the output tensor
         output_data = interpreter.get_tensor(output_details[0]['index'])
         output_data = torch.from_numpy(output_data)
+        print(sum(output_data[:, 4:5].flatten() > 0.0))
         results = boxes(output_data, args.confidence)
         
         for result in results: # draw bounding boxes
