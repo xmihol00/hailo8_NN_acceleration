@@ -6,7 +6,7 @@ import cv2
 import pandas as pd
 import numpy as np
 
-model = YOLO("models/yolov8m_plates_e25.pt")
+model = YOLO("models/yolov8m_plates_e25_quantized.pt")
 
 total_iou = 0
 for i, labelPath in enumerate(glob.glob("datasets/plates/test/labels/*.txt")):

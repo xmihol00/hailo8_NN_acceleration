@@ -1,3 +1,6 @@
 Average IoU
     Python: 0.8291
     Hailo8: 0.810389
+Average IoU quantization aware training
+    Python: 0.8321
+    Hailo8: TODO
