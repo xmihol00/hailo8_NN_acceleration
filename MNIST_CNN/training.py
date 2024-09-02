@@ -1,9 +1,13 @@
 import tensorflow as tf
 from model import build_model
 import numpy as np
+import tensorflow_model_optimization as tfmot
+
 
 if __name__ == "__main__":
     model = build_model()
+    model = tfmot.quantization.keras.quantize_model(model)
+
     model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     model.summary()
 
@@ -16,6 +20,9 @@ if __name__ == "__main__":
     
     model.fit(X_train, y_train, epochs=1, batch_size=32, validation_split=0.1)
     tf.saved_model.save(model, "weights")
+    model.summary()
+    for layer in model.layers:
+        print(layer.name, layer.input_shape, layer.output_shape)
 
     CREATE_TFLITE = False
     if CREATE_TFLITE:

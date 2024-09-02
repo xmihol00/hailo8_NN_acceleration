@@ -7,7 +7,15 @@ MODEL_NAME = "MNIST_CNN"
 
 if __name__ == "__main__":
     runner = ClientRunner(hw_arch=HAILO_HW)
-    runner.translate_tf_model("weights/saved_model.pb", MODEL_NAME, end_node_names=["MNIST_CNN/maxpool3/MaxPool"])
+    runner.translate_tf_model("weights/saved_model.pb", MODEL_NAME, start_node_names=["input"], end_node_names=["MNIST_CNN/quant_maxpool3/MaxPool"])
+
+    with InferenceContext(runner, MODEL_NAME) as context:
+        tf_model = runner.get_keras_model(context)
+        print("Model summary:")
+        tf_model.summary()
+        for layer in tf_model.layers:
+            print(layer.name, layer.input_shape, layer.output_shape)
+    exit()
 
     with open("mnist_test_X.bin", "rb") as f:
         X_test = f.read()
@@ -20,7 +28,7 @@ if __name__ == "__main__":
     hef = runner.compile()
     runner.model_summary()
 
-    with open(f"model.hef", "wb") as f:
+    with open(f"model_quantized.hef", "wb") as f:
         f.write(hef)
 
     os.system(f"rm *.log")
