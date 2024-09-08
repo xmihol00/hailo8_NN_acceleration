@@ -15,3 +15,4 @@ yolov8/hailo8_inference/inference_hailo8
 yolov8/hailo8_inference
 yolov8/evaluation_hailo8
 yolov8/yolov8m.har
+yolov8/cropped/

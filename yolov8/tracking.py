@@ -37,14 +37,12 @@ def track(image):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="models/yolov8m_humans.pt", help="Path to the model file")
-parser.add_argument("-i", "--images", type=str, default="datasets/humans/valid/images", help="Path to the images directory")
-parser.add_argument("-l", "--labels", type=str, default="datasets/humans/valid/labels", help="Path to the labels directory")
+parser.add_argument("-i", "--images", type=str, default="datasets/humans/valid/images", help="Path to the images directory or video file")
 parser.add_argument("-d", "--delay", type=int, default=50, help="Delay between frames, 0 means do not show output video.")
 
 args = parser.parse_args()
 model = YOLO(args.model)
 tracker = SortTracker()
-
 
 if args.images.endswith("mp4"):
     cap = cv2.VideoCapture(args.images)
@@ -54,6 +52,7 @@ if args.images.endswith("mp4"):
 
     while True:
         ret, frame = cap.read()
+        print(frame.shape)
         if not ret:
             break
 
