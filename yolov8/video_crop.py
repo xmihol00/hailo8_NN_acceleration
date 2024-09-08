@@ -6,13 +6,17 @@ import argparse
 import os
 from sort.tracker import SortTracker
 
-def crop(frame, bbox, target_width=720, target_height=1280):
-    # unpack the bounding box
-    x1, y1, x2, y2 = bbox
+def crop(frame, bboxes, target_width=720, target_height=1280):
+    bboxes = np.array(bboxes)
+    # weights for the center averaging
+    weights = np.array([0.015, 0.035, 0.05, 0.15, 0.75])[5 - bboxes.shape[0]:]
+    weights /= weights.sum()
 
     # calculate the center of the bounding box
-    center_x = (x1 + x2) // 2
-    center_y = (y1 + y2) // 2
+    centers_x = (bboxes[:, 0] + bboxes[:, 2]) * 0.5
+    centers_y = (bboxes[:, 1] + bboxes[:, 3]) * 0.5
+    center_x = int(np.dot(centers_x, weights))
+    center_y = int(np.dot(centers_y, weights))
 
     # initial crop dimensions (centered on the person)
     top_left_x = max(center_x - target_width // 2, 0)
@@ -27,8 +31,10 @@ def crop(frame, bbox, target_width=720, target_height=1280):
     # expand the crop to match the target size if necessary
     if current_width < target_width:
         delta_x = target_width - current_width
-        top_left_x = max(top_left_x - delta_x // 2, 0)
-        bottom_right_x = min(bottom_right_x + delta_x // 2, frame.shape[1])
+        delta_x_left = delta_x // 2
+        delta_x_right = delta_x - delta_x_left
+        top_left_x = max(top_left_x - delta_x_left, 0)
+        bottom_right_x = min(bottom_right_x + delta_x_right, frame.shape[1])
         
         delta_x = bottom_right_x - top_left_x
         if top_left_x == 0:
@@ -44,8 +50,10 @@ def crop(frame, bbox, target_width=720, target_height=1280):
 
     if current_height < target_height:
         delta_y = target_height - current_height
-        top_left_y = max(top_left_y - delta_y // 2, 0)
-        bottom_right_y = min(bottom_right_y + delta_y // 2, frame.shape[0])
+        delta_y_top = delta_y // 2
+        delta_y_bottom = delta_y - delta_y_top
+        top_left_y = max(top_left_y - delta_y_top, 0)
+        bottom_right_y = min(bottom_right_y + delta_y_bottom, frame.shape[0])
 
         delta_y = bottom_right_y - top_left_y
         if top_left_y == 0:
@@ -103,15 +111,20 @@ if args.images.endswith("mp4"):
         print("Error: Could not open output video.")
         exit()
 
+    bboxes = []
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
         bbox = track(frame)[:4]
-        cropped_frame = crop(frame, bbox, output_size[0], output_size[1])
+        bboxes.append(bbox)
+        cropped_frame = crop(frame, bboxes, output_size[0], output_size[1])
+        if len(bboxes) >= 5:
+            bboxes.pop(0)
         if cropped_frame.shape[1] != output_size[0] or cropped_frame.shape[0] != output_size[1]:
-            print(f"Warning: Cropped frame size is not {output_size}, actual {(cropped_frame.shape[1], cropped_frame.shape[0])}.")
+            print(f"ERROR: Cropped frame size is not {output_size}, actual {(cropped_frame.shape[1], cropped_frame.shape[0])}.")
+            exit()
         output_video.write(cropped_frame)
         if args.delay > 0:
             cv2.imshow("Cropped", cropped_frame)
