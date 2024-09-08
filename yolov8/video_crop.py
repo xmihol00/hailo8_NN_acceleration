@@ -9,7 +9,7 @@ from sort.tracker import SortTracker
 def crop(frame, bboxes, target_width=720, target_height=1280):
     bboxes = np.array(bboxes)
     # weights for the center averaging
-    weights = np.array([0.015, 0.035, 0.05, 0.15, 0.75])[5 - bboxes.shape[0]:]
+    weights = np.array([1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10])[10 - bboxes.shape[0]:]
     weights /= weights.sum()
 
     # calculate the center of the bounding box
@@ -25,8 +25,8 @@ def crop(frame, bboxes, target_width=720, target_height=1280):
     bottom_right_y = min(center_y + target_height // 2, frame.shape[0])
 
     # get the crop dimensions
-    current_width = bottom_right_x - top_left_x
     current_height = bottom_right_y - top_left_y
+    current_width = bottom_right_x - top_left_x
 
     # expand the crop to match the target size if necessary
     if current_width < target_width:
@@ -41,7 +41,9 @@ def crop(frame, bboxes, target_width=720, target_height=1280):
             bottom_right_x = min(bottom_right_x + delta_x, frame.shape[1])
         elif bottom_right_x == frame.shape[1]:
             top_left_x = max(top_left_x - delta_x, 0)
-    elif current_width > target_width:
+
+    current_width = bottom_right_x - top_left_x
+    if current_width > target_width:
         delta_x = current_width - target_width
         delta_x_left = delta_x // 2
         delta_x_right = delta_x - delta_x_left
@@ -60,7 +62,9 @@ def crop(frame, bboxes, target_width=720, target_height=1280):
             bottom_right_y = min(bottom_right_y + delta_y, frame.shape[0])
         elif bottom_right_y == frame.shape[0]:
             top_left_y = max(top_left_y - delta_y, 0)
-    elif current_height > target_height:
+    
+    current_height = bottom_right_y - top_left_y
+    if current_height > target_height:
         delta_y = current_height - target_height
         delta_y_top = delta_y // 2
         delta_y_bottom = delta_y - delta_y_top
@@ -84,17 +88,22 @@ def track(image):
     else:
         tracks = tracker.update(np.array(coordinates_pred))[:, :5]
     
-    return tracks[0]
+    if len(tracks) == 0:
+        return None
+    else:
+        return tracks[0]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="models/yolov8m_humans.pt", help="Path to the model file")
-parser.add_argument("-i", "--images", type=str, default="datasets/humans/valid/images", help="Path to the images directory or video file")
-parser.add_argument("-o", "--output", type=str, default="cropped/video.mp4", help="Output path of the cropped video.")
+parser.add_argument("-i", "--images", type=str, help="Path to the images directory or video file")
+parser.add_argument("-o", "--output", type=str, default="", help="Output path of the cropped video, by default it is going to be the input video stored in a 'cropped' directory.")
 parser.add_argument("-d", "--delay", type=int, default=50, help="Delay between frames, 0 means do not show output video.")
 
 args = parser.parse_args()
-model = YOLO(args.model)
+model = YOLO(args.model, verbose=False)
 tracker = SortTracker()
+if not args.output:
+    args.output = os.path.join("cropped", os.path.basename(args.images))
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
 if args.images.endswith("mp4"):
@@ -105,7 +114,7 @@ if args.images.endswith("mp4"):
     
     fps = cap.get(cv2.CAP_PROP_FPS)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    output_size = (522, 864)
+    output_size = (720, 920) # TODO fix the hardcoded values
     output_video = cv2.VideoWriter(args.output, fourcc, fps, output_size)
     if not output_video.isOpened():
         print("Error: Could not open output video.")
@@ -117,11 +126,14 @@ if args.images.endswith("mp4"):
         if not ret:
             break
 
-        bbox = track(frame)[:4]
-        bboxes.append(bbox)
-        cropped_frame = crop(frame, bboxes, output_size[0], output_size[1])
-        if len(bboxes) >= 5:
+        bbox = track(frame)
+        if bbox is not None:
+            bboxes.append(bbox[:4])
+        if len(bboxes) > 10:
             bboxes.pop(0)
+        elif len(bboxes) == 0:
+            bboxes.append([0, 0, frame.shape[1], frame.shape[0]])
+        cropped_frame = crop(frame, bboxes, output_size[0], output_size[1])
         if cropped_frame.shape[1] != output_size[0] or cropped_frame.shape[0] != output_size[1]:
             print(f"ERROR: Cropped frame size is not {output_size}, actual {(cropped_frame.shape[1], cropped_frame.shape[0])}.")
             exit()

@@ -90,11 +90,12 @@ def create_tfrecord(filenames, label_dir, tfrecords_filename, num_images):
 
     return i + 1
 
-val_image_dir = "datasets/plates/valid/images"
-label_dir = "datasets/plates/valid/labels"
+dataset = "test"
+val_image_dir = f"datasets/plates/{dataset}/images"
+label_dir = f"datasets/plates/{dataset}/labels"
 
 image_filenames = [os.path.join(val_image_dir, fname) for fname in os.listdir(val_image_dir) if fname.endswith('.jpg')]
 num_images = len(image_filenames)
-output_name = "datasets/plates/validation.tfrecord"
+output_name = f"datasets/plates/{dataset}.tfrecord"
 
 create_tfrecord(image_filenames, label_dir, output_name, num_images)
