@@ -5,16 +5,25 @@ import glob
 import cv2
 import pandas as pd
 import numpy as np
+import argparse
+import os
 
-model = YOLO("models/yolov8m_plates_e25_quantized.pt")
+parser = argparse.ArgumentParser()
+parser.add_argument("-m", "--model", type=str, default="models/yolov8m_humans.pt", help="Path to the model file")
+parser.add_argument("-i", "--images", type=str, default="datasets/humans/valid/images", help="Path to the images directory")
+parser.add_argument("-l", "--labels", type=str, default="datasets/humans/valid/labels", help="Path to the labels directory")
+parser.add_argument("-d", "--delay", type=int, default=250, help="Delay between frames, 0 means do not show output video.")
 
+args = parser.parse_args()
+model = YOLO(args.model)
+
+images = glob.glob(os.path.join(args.images, "*"))
 total_iou = 0
-for i, labelPath in enumerate(glob.glob("datasets/plates/test/labels/*.txt")):
-    imagePath = labelPath.replace("labels", "images").replace(".txt", ".jpg")
-    
+for imagePath in images:
     # load the image
     image = cv2.imread(imagePath)
-    # load labels
+    
+    labelPath = imagePath.replace("images", "labels").replace(".jpg", ".txt").replace(".png", ".txt")
     labels = pd.read_csv(labelPath, header=None, sep=" ", names=["class", "x", "y", "w", "h"])
     # retrieve the bounding box coordinates
     coordinates_gt = labels[["x", "y", "w", "h"]].values
@@ -25,13 +34,25 @@ for i, labelPath in enumerate(glob.glob("datasets/plates/test/labels/*.txt")):
     coordinates_gt_xyxy[:, 2] = (coordinates_gt[:, 0] + coordinates_gt[:, 2] / 2) * image.shape[1]
     coordinates_gt_xyxy[:, 3] = (coordinates_gt[:, 1] + coordinates_gt[:, 3] / 2) * image.shape[0]
 
+    # display the ground truth bounding boxes
+    for box in coordinates_gt_xyxy:
+        cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 0, 255), 2)
+
     results = model(image) # perform inference on the frame
     coordinates_pred = [box.xyxy[0].tolist() for result in results for box in result.boxes]
-    if not coordinates_pred:
-        continue
+    
+    # display the predicted bounding boxes
+    for box in coordinates_pred:
+        cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
+    
+    # display the image
+    if args.delay > 0:
+        cv2.imshow("YOLOv8 prediction vs ground truth", image)
+        if cv2.waitKey(args.delay) & 0xFF == ord('q'):
+            break
 
-    print(coordinates_gt_xyxy, coordinates_pred)
     iou = box_iou(torch.tensor(coordinates_gt_xyxy), torch.tensor(coordinates_pred))
+    print(f"IoU: {iou.max(dim=1).values.mean().item():.4f}")
     total_iou += iou.max(dim=1).values.mean().item()
 
-print(f"Average IoU: {total_iou / (i + 1):.4f}")
+print(f"Total IoU: {total_iou / len(images):.4f}")
