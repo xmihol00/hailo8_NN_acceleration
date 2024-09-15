@@ -6,31 +6,73 @@ import argparse
 import os
 from sort.tracker import SortTracker
 
-def crop(frame, bboxes, target_width=720, target_height=1280, tracks=1):
+roundingBoxes = []
+
+def crop(frame, bboxes, target_width=720, target_height=1280, tracks=1, max_box_move=100):
     current_height, current_width = frame.shape[:2]
+    print(current_width, current_height)
     
     if len(bboxes) == 0:
         centers_x = [current_width // 2] * tracks
         centers_y = [current_height // 2] * tracks
     else:
-        bboxes[-1] = sorted(bboxes[-1], key=lambda x: x[4], reverse=True)[:tracks]
-        bboxes = np.array(bboxes[-1])
+        bboxes = bboxes[-1]
+        
+        global roundingBoxes
+        closestBoxes = []
+        print(roundingBoxes, bboxes)
+        if bboxes:
+            for roundingBox in roundingBoxes:
+                closestBoxes.append(sorted(bboxes, key=lambda x: (x[0] - roundingBox[0])**2 + (x[1] - roundingBox[1])**2)[0])
+            closestBoxes = np.array(closestBoxes)
 
-        # TODO ensure that there are the correct number of centers, do some averaging over the last frames or do some moving box
+            # calculate the center of the bounding box
+            closest_centers_x = closestBoxes[:, 0]
+            closest_centers_y = closestBoxes[:, 1]
+        else:
+            closest_centers_x = [roundingBox[4] for roundingBox in roundingBoxes]
+            closest_centers_y = [roundingBox[5] for roundingBox in roundingBoxes]
 
-        # weights for the center averaging
-        #weights = np.array([1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10])[10 - bboxes.shape[0]:]
-        #weights /= weights.sum()
+        centers_x = []
+        centers_y = []
+        for rounding_box, center_x, center_y in zip(roundingBoxes, closest_centers_x, closest_centers_y):
+            if rounding_box[0] > center_x:
+                new_center_x = rounding_box[0] - max_box_move
+                if new_center_x < 0:
+                    new_center_x = 0
+                move_x = rounding_box[0] - new_center_x
+            elif rounding_box[2] < center_x:
+                new_center_x = rounding_box[2] + max_box_move
+                if new_center_x > current_width:
+                    new_center_x = current_width
+                move_x = new_center_x - rounding_box[2]
+            else:
+                move_x = 0
+            
+            if rounding_box[1] > center_y:
+                new_center_y = rounding_box[1] - max_box_move
+                if new_center_y < 0:
+                    new_center_y = 0
+                move_y = rounding_box[1] - new_center_y
+            elif rounding_box[3] < center_y:
+                new_center_y = rounding_box[3] + max_box_move
+                if new_center_y > current_height:
+                    new_center_y = current_height
+                move_y = new_center_y - rounding_box[3]
+            else:
+                move_y = 0
+            
+            rounding_box[0] -= move_x
+            rounding_box[1] -= move_y
+            rounding_box[2] -= move_x
+            rounding_box[3] -= move_y
+            rounding_box[4] -= move_x
+            rounding_box[5] -= move_y
 
-        # calculate the center of the bounding box
-        centers_x = (bboxes[:, 0] + bboxes[:, 2]) * 0.5
-        centers_y = (bboxes[:, 1] + bboxes[:, 3]) * 0.5
-        #center_x = int(np.dot(centers_x, weights))
-        #center_y = int(np.dot(centers_y, weights))
-        if bboxes.shape[0] < tracks:
-            centers_x = np.concatenate((centers_x, [current_width // 2] * (tracks - bboxes.shape[0])))
-            centers_y = np.concatenate((centers_y, [current_height // 2] * (tracks - bboxes.shape[0])))
+            centers_x.append(rounding_box[4])
+            centers_y.append(rounding_box[5])   
     
+    print(centers_x, centers_y)
     cropped_frame = np.zeros((target_height, target_width * tracks, 3), dtype=np.uint8)
     for i, (center_x, center_y) in enumerate(zip(centers_x, centers_y)):
         # initial crop dimensions (centered on the person)
@@ -91,13 +133,16 @@ def crop(frame, bboxes, target_width=720, target_height=1280, tracks=1):
         top_left_x = int(max(top_left_x, 0))
         bottom_right_y = int(min(bottom_right_y, frame.shape[0]))
         bottom_right_x = int(min(bottom_right_x, frame.shape[1]))
+        print(top_left_x, top_left_y, bottom_right_x, bottom_right_y)
         cropped_frame[:, i * target_width:(i + 1) * target_width, :] = frame[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
 
     return cropped_frame
 
 def track(image):
     results = model(image) # perform inference on the frame
-    coordinates_pred = [box.xyxy[0].tolist() + [box.conf.item(), 0] for result in results for box in result.boxes]
+    coordinates_pred = [box.xywh[0].tolist() for result in results for box in result.boxes if box.conf.item() > 0.5]
+    return coordinates_pred
+
     if not coordinates_pred:
         tracks = tracker.update(np.empty((0, 5)))[:, :5].tolist()    
     else:
@@ -114,6 +159,9 @@ parser.add_argument("-i", "--images", type=str, help="Path to the images directo
 parser.add_argument("-o", "--output", type=str, default="", help="Output path of the cropped video, by default it is going to be the input video stored in a 'cropped' directory.")
 parser.add_argument("-d", "--delay", type=int, default=50, help="Delay between frames, 0 means do not show output video.")
 parser.add_argument("-t", "--tracks", type=int, default=1, help="Number of object to be followed in the scene")
+parser.add_argument("-hc", "--height", type=int, default=1080, help="Height of the cropped video")
+parser.add_argument("-wc", "--width", type=int, default=720, help="Width of the cropped video")
+parser.add_argument("-rb", "--rounding_box", type=float, default=0.15, help="Size of a rounding box in percentages of the original image")
 
 args = parser.parse_args()
 model = YOLO(args.model, verbose=False)
@@ -129,19 +177,32 @@ if args.images.endswith("mp4"):
         exit()
     
     fps = cap.get(cv2.CAP_PROP_FPS)
+    ret, frame = cap.read()
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    output_size = (720 * args.tracks, 920) # TODO fix the hardcoded values
+    output_size = (args.width * args.tracks, args.height if args.height < frame.shape[1] - 100 else frame.shape[1] - 100)
     output_video = cv2.VideoWriter(args.output, fourcc, fps, output_size)
     if not output_video.isOpened():
         print("Error: Could not open output video.")
         exit()
+    
+    width_per_track = frame.shape[1] // args.tracks
+    half_width_per_track = width_per_track // 2
+    height_per_track = frame.shape[0]
+    print(width_per_track, height_per_track)
+    for i in range(args.tracks):
+        center_x = half_width_per_track + width_per_track * i
+        center_y = height_per_track // 2
+        roundingBoxes.append([
+            int(center_x - args.rounding_box * width_per_track), 
+            int(center_y - args.rounding_box * height_per_track), 
+            int(center_x + args.rounding_box * width_per_track), 
+            int(center_y + args.rounding_box * height_per_track),
+            center_x,
+            center_y
+        ])
 
     bboxes = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
+    while ret:
         bbox = track(frame)
         if bbox is not None:
             bboxes.append(bbox)
@@ -156,6 +217,8 @@ if args.images.endswith("mp4"):
             cv2.imshow("Cropped", cropped_frame)
             if cv2.waitKey(args.delay) & 0xFF == ord('q'):
                 break
+
+        ret, frame = cap.read()
         
     cap.release()
     output_video.release()
