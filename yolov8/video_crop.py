@@ -6,7 +6,7 @@ import argparse
 import os
 
 class TrackCropping:
-    def __init__(self, target_width=720, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000, max_box_move=0.1, rounding_box=0.15):
+    def __init__(self, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000, max_box_move=0.1, rounding_box=0.15):
         self.target_width = target_width
         self.target_height = target_height
         self.tracks = tracks
@@ -24,10 +24,12 @@ class TrackCropping:
         self.right_centers = []
         self.averaged_frames = 24
         self.original_centers = []
+        self.colors = []
         
         for i in range(tracks):
             self.centers.append((self.half_width_per_track + self.width_per_track * i, current_height // 2))
             self.original_centers.append((self.half_width_per_track + self.width_per_track * i, current_height // 2))
+            self.colors.append((0, 0, 255))
         
         self.left_centers = [self.centers[0]] * self.averaged_frames
         self.right_centers = [self.centers[1]] * self.averaged_frames
@@ -37,16 +39,13 @@ class TrackCropping:
     
     def crop_tracks_2(self, frame, bounding_boxes):
         left_center_idx, left_center_min, right_center_idx, right_center_min = None, None, None, None
-        left_lambda = lambda x: (x[1][0] - (self.original_centers[0][0] - self.width_shift)) ** 2 + (x[1][1] - self.centers[0][1]) ** 2
-        right_lambda = lambda x: (x[1][0] - (self.original_centers[1][0] + self.width_shift)) ** 2 + (x[1][1] - self.centers[1][1]) ** 2
+        left_lambda = lambda x: (x[1][0] - (self.original_centers[0][0] - self.width_shift)) ** 2 + (x[1][1] - self.original_centers[0][1]) ** 2
+        right_lambda = lambda x: (x[1][0] - (self.original_centers[1][0] + self.width_shift)) ** 2 + (x[1][1] - self.original_centers[1][1]) ** 2
 
-        print("before:", bounding_boxes)
         bounding_boxes = list(filter(lambda x: x[2] * x[3] > self.min_box_area, bounding_boxes))
-        print("after:", bounding_boxes)
         if len(bounding_boxes) > 0:
             left_center_idx, left_center_min = min(enumerate(bounding_boxes), key=left_lambda)
             right_center_idx, right_center_min = min(enumerate(bounding_boxes), key=right_lambda)
-            print("left:", left_center_min, "right:", right_center_min)
         
             if left_center_idx == right_center_idx:
                 left_distance = left_lambda((None, left_center_min))
@@ -57,14 +56,18 @@ class TrackCropping:
                         right_center_idx, right_center_min = min(enumerate(bounding_boxes), key=right_lambda)
                     else:
                         right_center_idx, right_center_min = None, None
+                        self.colors[1] = (0, 0, 255)
                 else:
                     bounding_boxes.pop(left_center_idx)
                     if len(bounding_boxes) > 0:
                         left_center_idx, left_center_min = min(enumerate(bounding_boxes), key=left_lambda)
                     else:
                         left_center_idx, left_center_min = None, None
+                        self.colors[0] = (0, 0, 255)
+        else:
+            self.colors[0] = (0, 0, 255)
+            self.colors[1] = (0, 0, 255)
         
-        print("left:", left_center_min, "right:", right_center_min)
         left_center_avg = [0, 0]
         right_center_avg = [0, 0]
         for i in range(self.averaged_frames):
@@ -77,31 +80,37 @@ class TrackCropping:
         if left_center_idx is not None:
             if (left_center_min[0] - left_center_avg[0]) ** 2 + (left_center_min[1] - left_center_avg[1]) ** 2 < self.max_move_x ** 2:
                 self.centers[0] = int(left_center_min[0]), int(left_center_min[1])
+                self.colors[0] = (0, 255, 0)
             else:
-                move_x = left_center_avg[0] - self.centers[0][0]
+                move_x = left_center_min[0] - left_center_avg[0]
                 if abs(move_x) > self.max_move_x:
                     move_x = self.max_move_x if move_x > 0 else -self.max_move_x
-                move_y = left_center_avg[1] - self.centers[0][1]
+                move_y = left_center_min[1] - left_center_avg[1]
                 if abs(move_y) > self.max_move_y:
                     move_y = self.max_move_y if move_y > 0 else -self.max_move_y
                 self.centers[0] = (int(self.centers[0][0] + move_x), int(self.centers[0][1] + move_y))
+                self.colors[0] = (255, 0, 0)
+                
         self.left_centers.append(self.centers[0])
         
         self.right_centers.pop(0)
         if right_center_idx is not None:
             if (right_center_min[0] - right_center_avg[0]) ** 2 + (right_center_min[1] - right_center_avg[1]) ** 2 < self.max_move_x ** 2:
                 self.centers[1] = int(right_center_min[0]), int(right_center_min[1])
+                self.colors[1] = (0, 255, 0)
             else:
-                move_x = right_center_avg[0] - self.centers[1][0]
+                move_x = right_center_min[0] - right_center_avg[0] 
                 if abs(move_x) > self.max_move_x:
                     move_x = self.max_move_x if move_x > 0 else -self.max_move_x
-                move_y = right_center_avg[1] - self.centers[1][1]
+                move_y = right_center_min[1] - right_center_avg[1]
                 if abs(move_y) > self.max_move_y:
                     move_y = self.max_move_y if move_y > 0 else -self.max_move_y
                 self.centers[1] = (int(self.centers[1][0] + move_x), int(self.centers[1][1] + move_y))
+                self.colors[1] = (255, 0, 0)
+                
         self.right_centers.append(self.centers[1])
-        
         print(self.centers)
+        
         cropped_frame = np.zeros((self.target_height, self.target_width * self.tracks, 3), dtype=np.uint8)
         for i, (center_x, center_y) in enumerate(self.centers):
             # initial crop dimensions (centered on the person)
@@ -163,6 +172,8 @@ class TrackCropping:
             bottom_right_y = int(min(bottom_right_y, frame.shape[0]))
             bottom_right_x = int(min(bottom_right_x, frame.shape[1]))
             cropped_frame[:, i * self.target_width:(i + 1) * self.target_width, :] = frame[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
+            cv2.rectangle(cropped_frame, (self.centers[i][0] - 3 - top_left_x + self.target_width * i, self.centers[i][1] - 3 - top_left_y), 
+                                         (self.centers[i][0] + 3 - top_left_x + self.target_width * i, self.centers[i][1] + 3 - top_left_y), self.colors[i], 3)
 
         return cropped_frame
             
