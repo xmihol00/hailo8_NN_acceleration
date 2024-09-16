@@ -6,7 +6,8 @@ import argparse
 import os
 
 class TrackCropping:
-    def __init__(self, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000):
+    def __init__(self, model, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000):
+        self.model = model
         self.target_width = target_width
         self.target_height = target_height
         self.tracks = tracks
@@ -16,9 +17,6 @@ class TrackCropping:
         self.width_per_track = current_width // tracks
         self.half_width_per_track = self.width_per_track // 2
         self.width_shift = self.width_per_track // 8
-        self.left_centers = []
-        self.right_centers = []
-        self.averaged_frames = 24
         self.original_centers = []
         self.colors = []
         
@@ -27,14 +25,12 @@ class TrackCropping:
             self.original_centers.append((self.half_width_per_track + self.width_per_track * i, current_height // 2))
             self.colors.append((0, 0, 255))
         
-        self.left_centers = [self.centers[0]] * self.averaged_frames
-        self.right_centers = [self.centers[1]] * self.averaged_frames
         self.last_centers = [self.centers[i] for i in range(self.tracks)]
-        
-        weights_sum = sum(range(1, self.averaged_frames + 1))
-        self.weights = [i / weights_sum for i in range(1, self.averaged_frames + 1)]
     
-    def crop_tracks_2(self, frame, bounding_boxes):
+    def track_2(self, frame):
+        results = model(frame) # perform inference on the frame
+        bounding_boxes = [box.xywh[0].tolist() for result in results for box in result.boxes if box.conf.item() > 0.5]
+
         left_center_idx, left_center_min, right_center_idx, right_center_min = None, None, None, None
         left_lambda = lambda x: (x[1][0] - (self.original_centers[0][0] - self.width_shift)) ** 2 + (x[1][1] - self.original_centers[0][1]) ** 2
         right_lambda = lambda x: (x[1][0] - (self.original_centers[1][0] + self.width_shift)) ** 2 + (x[1][1] - self.original_centers[1][1]) ** 2
@@ -48,42 +44,42 @@ class TrackCropping:
                 left_distance = left_lambda((None, left_center_min))
                 right_distance = right_lambda((None, right_center_min))
                 if left_distance <= right_distance:
+                    self.last_centers[0] = left_center_min
                     bounding_boxes.pop(right_center_idx)
                     if len(bounding_boxes) > 0:
                         right_center_idx, right_center_min = min(enumerate(bounding_boxes), key=right_lambda)
+                        self.last_centers[1] = right_center_min
                     else:
-                        right_center_idx, right_center_min = None, None
+                        right_center_min = self.last_centers[1]
                         self.colors[1] = (0, 0, 255)
                 else:
+                    self.last_centers[1] = right_center_min
                     bounding_boxes.pop(left_center_idx)
                     if len(bounding_boxes) > 0:
                         left_center_idx, left_center_min = min(enumerate(bounding_boxes), key=left_lambda)
+                        self.last_centers[0] = left_center_min
                     else:
-                        left_center_idx, left_center_min = None, None
+                        left_center_min = self.last_centers[0]
                         self.colors[0] = (0, 0, 255)
+            else:
+                self.last_centers = [left_center_min, right_center_min]
         else:
             self.colors[0] = (0, 0, 255)
             self.colors[1] = (0, 0, 255)
+            left_center_min, right_center_min = self.last_centers
+
+        return left_center_min[0], left_center_min[1], right_center_min[0], right_center_min[1]
+    
+    def crop_tracks_2(self, frame, bounding_boxes):
+        bounding_boxes = np.array(bounding_boxes)
+        left_center_avg = np.average(bounding_boxes[:, :2], axis=0)
+        right_center_avg = np.average(bounding_boxes[:, 2:], axis=0)
         
-        left_center_avg = [0, 0]
-        right_center_avg = [0, 0]
-        for i in range(self.averaged_frames):
-            left_center_avg[0] += self.weights[i] * self.left_centers[i][0]
-            left_center_avg[1] += self.weights[i] * self.left_centers[i][1]
-            right_center_avg[0] += self.weights[i] * self.right_centers[i][0]
-            right_center_avg[1] += self.weights[i] * self.right_centers[i][1]
+        self.centers[0] = int(left_center_avg[0]), int(left_center_avg[1])
+        self.colors[0] = (0, 255, 0)
         
-        self.left_centers.pop(0)
-        if left_center_idx is not None:
-            self.centers[0] = int(left_center_min[0]), int(left_center_min[1])
-            self.colors[0] = (0, 255, 0)
-        self.left_centers.append(self.centers[0])
-        
-        self.right_centers.pop(0)
-        if right_center_idx is not None:
-            self.centers[1] = int(right_center_min[0]), int(right_center_min[1])
-            self.colors[1] = (0, 255, 0)
-        self.right_centers.append(self.centers[1])
+        self.centers[1] = int(right_center_avg[0]), int(right_center_avg[1])
+        self.colors[1] = (0, 255, 0)
         
         cropped_frame = np.zeros((self.target_height, self.target_width * self.tracks, 3), dtype=np.uint8)
         for i, (center_x, center_y) in enumerate(self.centers):
@@ -109,12 +105,6 @@ class TrackCropping:
                                          (self.centers[i][0] + 3 - top_left_x + self.target_width * i, self.centers[i][1] + 3 - top_left_y), self.colors[i], 3)
 
         return cropped_frame
-            
-
-def track(image):
-    results = model(image) # perform inference on the frame
-    coordinates_pred = [box.xywh[0].tolist() for result in results for box in result.boxes if box.conf.item() > 0.5]
-    return coordinates_pred
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="models/yolov8m_humans.pt", help="Path to the model file")
@@ -128,7 +118,7 @@ parser.add_argument("-rb", "--rounding_box", type=float, default=0.15, help="Siz
 
 args = parser.parse_args()
 model = YOLO(args.model, verbose=False)
-cropper = TrackCropping(target_width=args.width, target_height=args.height, tracks=args.tracks)
+cropper = TrackCropping(model, target_width=args.width, target_height=args.height, tracks=args.tracks)
 if not args.output:
     args.output = os.path.join("cropped", os.path.basename(args.images))
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -148,12 +138,27 @@ if args.images.endswith("mp4"):
         print("Error: Could not open output video.")
         exit()
     
+    frames = [frame]
+    bounding_boxes = [cropper.track_2(frame)] * 24
+    
     width_per_track = frame.shape[1] // args.tracks
     half_width_per_track = width_per_track // 2
     height_per_track = frame.shape[0]
 
-    while ret:
-        bounding_boxes = track(frame)
+    for _ in range(24):
+        ret, frame = cap.read()
+        frames.append(frame)
+        bounding_boxes.append(cropper.track_2(frame))
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        frames.append(frame)
+        bounding_boxes.append(cropper.track_2(frame))
+        frame = frames.pop(0)
+        bounding_boxes.pop(0)
         cropped_frame = cropper.crop_tracks_2(frame, bounding_boxes)
         if cropped_frame.shape[1] != output_size[0] or cropped_frame.shape[0] != output_size[1]:
             print(f"ERROR: Cropped frame size is not {output_size}, actual {(cropped_frame.shape[1], cropped_frame.shape[0])}.")
@@ -164,7 +169,17 @@ if args.images.endswith("mp4"):
             if cv2.waitKey(args.delay) & 0xFF == ord('q'):
                 break
 
-        ret, frame = cap.read()
+    for frame in frames:
+        bounding_boxes.append(cropper.track_2(frame))
+        cropped_frame = cropper.crop_tracks_2(frame, bounding_boxes)
+        if cropped_frame.shape[1] != output_size[0] or cropped_frame.shape[0] != output_size[1]:
+            print(f"ERROR: Cropped frame size is not {output_size}, actual {(cropped_frame.shape[1], cropped_frame.shape[0])}.")
+            exit()
+        output_video.write(cropped_frame)
+        if args.delay > 0:
+            cv2.imshow("Cropped", cropped_frame)
+            if cv2.waitKey(args.delay) & 0xFF == ord('q'):
+                break
         
     cap.release()
     output_video.release()
