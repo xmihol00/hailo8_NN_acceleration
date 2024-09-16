@@ -6,14 +6,10 @@ import argparse
 import os
 
 class TrackCropping:
-    def __init__(self, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000, max_box_move=0.1, rounding_box=0.15):
+    def __init__(self, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000):
         self.target_width = target_width
         self.target_height = target_height
         self.tracks = tracks
-        self.max_move_x = int(max_box_move * target_width)
-        self.max_move_y = int(max_box_move * target_height)
-        self.rounding_box_height = int(rounding_box * target_height)
-        self.rounding_box_width = int(rounding_box * target_width)
         self.min_box_area = min_box_area
         self.rounding_boxes = []
         self.centers = []
@@ -33,6 +29,7 @@ class TrackCropping:
         
         self.left_centers = [self.centers[0]] * self.averaged_frames
         self.right_centers = [self.centers[1]] * self.averaged_frames
+        self.last_centers = [self.centers[i] for i in range(self.tracks)]
         
         weights_sum = sum(range(1, self.averaged_frames + 1))
         self.weights = [i / weights_sum for i in range(1, self.averaged_frames + 1)]
@@ -78,38 +75,15 @@ class TrackCropping:
         
         self.left_centers.pop(0)
         if left_center_idx is not None:
-            if (left_center_min[0] - left_center_avg[0]) ** 2 + (left_center_min[1] - left_center_avg[1]) ** 2 < self.max_move_x ** 2:
-                self.centers[0] = int(left_center_min[0]), int(left_center_min[1])
-                self.colors[0] = (0, 255, 0)
-            else:
-                move_x = left_center_min[0] - left_center_avg[0]
-                if abs(move_x) > self.max_move_x:
-                    move_x = self.max_move_x if move_x > 0 else -self.max_move_x
-                move_y = left_center_min[1] - left_center_avg[1]
-                if abs(move_y) > self.max_move_y:
-                    move_y = self.max_move_y if move_y > 0 else -self.max_move_y
-                self.centers[0] = (int(self.centers[0][0] + move_x), int(self.centers[0][1] + move_y))
-                self.colors[0] = (255, 0, 0)
-                
+            self.centers[0] = int(left_center_min[0]), int(left_center_min[1])
+            self.colors[0] = (0, 255, 0)
         self.left_centers.append(self.centers[0])
         
         self.right_centers.pop(0)
         if right_center_idx is not None:
-            if (right_center_min[0] - right_center_avg[0]) ** 2 + (right_center_min[1] - right_center_avg[1]) ** 2 < self.max_move_x ** 2:
-                self.centers[1] = int(right_center_min[0]), int(right_center_min[1])
-                self.colors[1] = (0, 255, 0)
-            else:
-                move_x = right_center_min[0] - right_center_avg[0] 
-                if abs(move_x) > self.max_move_x:
-                    move_x = self.max_move_x if move_x > 0 else -self.max_move_x
-                move_y = right_center_min[1] - right_center_avg[1]
-                if abs(move_y) > self.max_move_y:
-                    move_y = self.max_move_y if move_y > 0 else -self.max_move_y
-                self.centers[1] = (int(self.centers[1][0] + move_x), int(self.centers[1][1] + move_y))
-                self.colors[1] = (255, 0, 0)
-                
+            self.centers[1] = int(right_center_min[0]), int(right_center_min[1])
+            self.colors[1] = (0, 255, 0)
         self.right_centers.append(self.centers[1])
-        print(self.centers)
         
         cropped_frame = np.zeros((self.target_height, self.target_width * self.tracks, 3), dtype=np.uint8)
         for i, (center_x, center_y) in enumerate(self.centers):
@@ -119,58 +93,17 @@ class TrackCropping:
             bottom_right_x = min(center_x + self.target_width // 2, frame.shape[1])
             bottom_right_y = min(center_y + self.target_height // 2, frame.shape[0])
 
-            # get the crop dimensions
-            current_height = bottom_right_y - top_left_y
-            current_width = bottom_right_x - top_left_x
-
-            # expand the crop to match the target size if necessary
-            if current_width < self.target_width:
-                delta_x = self.target_width - current_width
-                delta_x_left = delta_x // 2
-                delta_x_right = delta_x - delta_x_left
-                top_left_x = max(top_left_x - delta_x_left, 0)
-                bottom_right_x = min(bottom_right_x + delta_x_right, frame.shape[1])
-                
-                delta_x = bottom_right_x - top_left_x
-                if top_left_x == 0:
-                    bottom_right_x = min(bottom_right_x + delta_x, frame.shape[1])
-                elif bottom_right_x == frame.shape[1]:
-                    top_left_x = max(top_left_x - delta_x, 0)
-
-            current_width = bottom_right_x - top_left_x
-            if current_width > self.target_width:
-                delta_x = current_width - self.target_width
-                delta_x_left = delta_x // 2
-                delta_x_right = delta_x - delta_x_left
-                top_left_x += delta_x_left
-                bottom_right_x -= delta_x_right
-
-            if current_height < self.target_height:
-                delta_y = self.target_height - current_height
-                delta_y_top = delta_y // 2
-                delta_y_bottom = delta_y - delta_y_top
-                top_left_y = max(top_left_y - delta_y_top, 0)
-                bottom_right_y = min(bottom_right_y + delta_y_bottom, frame.shape[0])
-
-                delta_y = bottom_right_y - top_left_y
-                if top_left_y == 0:
-                    bottom_right_y = min(bottom_right_y + delta_y, frame.shape[0])
-                elif bottom_right_y == frame.shape[0]:
-                    top_left_y = max(top_left_y - delta_y, 0)
+            if top_left_x == 0:
+                bottom_right_x += self.target_width - (bottom_right_x - top_left_x)
+            elif bottom_right_x == frame.shape[1]:
+                top_left_x -= self.target_width - (bottom_right_x - top_left_x)
             
-            current_height = bottom_right_y - top_left_y
-            if current_height > self.target_height:
-                delta_y = current_height - self.target_height
-                delta_y_top = delta_y // 2
-                delta_y_bottom = delta_y - delta_y_top
-                top_left_y += delta_y_top
-                bottom_right_y -= delta_y_bottom
+            if top_left_y == 0:
+                bottom_right_y += self.target_height - (bottom_right_y - top_left_y)
+            elif bottom_right_y == frame.shape[0]:
+                top_left_y -= self.target_height - (bottom_right_y - top_left_y)
 
             # final crop, ensuring exact target size
-            top_left_y = int(max(top_left_y, 0))
-            top_left_x = int(max(top_left_x, 0))
-            bottom_right_y = int(min(bottom_right_y, frame.shape[0]))
-            bottom_right_x = int(min(bottom_right_x, frame.shape[1]))
             cropped_frame[:, i * self.target_width:(i + 1) * self.target_width, :] = frame[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
             cv2.rectangle(cropped_frame, (self.centers[i][0] - 3 - top_left_x + self.target_width * i, self.centers[i][1] - 3 - top_left_y), 
                                          (self.centers[i][0] + 3 - top_left_x + self.target_width * i, self.centers[i][1] + 3 - top_left_y), self.colors[i], 3)
@@ -195,7 +128,7 @@ parser.add_argument("-rb", "--rounding_box", type=float, default=0.15, help="Siz
 
 args = parser.parse_args()
 model = YOLO(args.model, verbose=False)
-cropper = TrackCropping(target_width=args.width, target_height=args.height, tracks=args.tracks, rounding_box=args.rounding_box)
+cropper = TrackCropping(target_width=args.width, target_height=args.height, tracks=args.tracks)
 if not args.output:
     args.output = os.path.join("cropped", os.path.basename(args.images))
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
