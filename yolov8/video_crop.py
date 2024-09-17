@@ -6,7 +6,7 @@ import argparse
 import os
 
 class TrackCropping:
-    def __init__(self, model, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000):
+    def __init__(self, model, target_width=576, target_height=810, current_width=1920, current_height=1080, tracks=2, min_box_area=25000, show_centers=False):
         self.model = model
         self.target_width = target_width
         self.target_height = target_height
@@ -19,6 +19,7 @@ class TrackCropping:
         self.width_shift = self.width_per_track // 8
         self.original_centers = []
         self.colors = []
+        self.show_centers = show_centers
         
         for i in range(tracks):
             self.centers.append((self.half_width_per_track + self.width_per_track * i, current_height // 2))
@@ -101,8 +102,9 @@ class TrackCropping:
 
             # final crop, ensuring exact target size
             cropped_frame[:, i * self.target_width:(i + 1) * self.target_width, :] = frame[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
-            cv2.rectangle(cropped_frame, (self.centers[i][0] - 3 - top_left_x + self.target_width * i, self.centers[i][1] - 3 - top_left_y), 
-                                         (self.centers[i][0] + 3 - top_left_x + self.target_width * i, self.centers[i][1] + 3 - top_left_y), self.colors[i], 3)
+            if self.show_centers:
+                cv2.rectangle(cropped_frame, (self.centers[i][0] - 3 - top_left_x + self.target_width * i, self.centers[i][1] - 3 - top_left_y), 
+                                            (self.centers[i][0] + 3 - top_left_x + self.target_width * i, self.centers[i][1] + 3 - top_left_y), self.colors[i], 3)
 
         return cropped_frame
 
@@ -114,11 +116,11 @@ parser.add_argument("-d", "--delay", type=int, default=50, help="Delay between f
 parser.add_argument("-t", "--tracks", type=int, default=1, help="Number of object to be followed in the scene")
 parser.add_argument("-hc", "--height", type=int, default=1080, help="Height of the cropped video")
 parser.add_argument("-wc", "--width", type=int, default=720, help="Width of the cropped video")
-parser.add_argument("-rb", "--rounding_box", type=float, default=0.15, help="Size of a rounding box in percentages of the original image")
+parser.add_argument("-s", "--show_centers", action="store_true", help="Show the center of the tracked objects")
 
 args = parser.parse_args()
 model = YOLO(args.model, verbose=False)
-cropper = TrackCropping(model, target_width=args.width, target_height=args.height, tracks=args.tracks)
+cropper = TrackCropping(model, target_width=args.width, target_height=args.height, tracks=args.tracks, show_centers=args.show_centers)
 if not args.output:
     args.output = os.path.join("cropped", os.path.basename(args.images))
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
