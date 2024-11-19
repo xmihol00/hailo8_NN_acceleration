@@ -1,4 +1,6 @@
-CC=g++
+ifndef CC
+	CC=g++
+endif
 CFLAGS=-Wall -Wextra -g -fopenmp
 LDFLAGS=-lpthread -lhailort
 SCR=inference.cpp

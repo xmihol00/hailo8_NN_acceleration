@@ -1,0 +1,23 @@
+<html>
+  <head>
+     <style>
+            body { font-family: Arial, sans-serif; }
+            .container { width: 80%; margin: 0 auto; }
+            .stream { margin: 20px 0; }
+        </style>
+    <script>
+      function setsrc() {
+         document.getElementById('myIframe').src = window.location.protocol + "//" +
+window.location.hostname + ":1984/stream.html?src=cam0-gs-AR0234_1080p&mode=webrtc";
+      }
+    </script>
+ </head>
+  <body onload="setsrc()">
+  <div class="container">
+            <h2>SCAiLX Web Streaming App</h2>
+            <div class="stream" id="stream1"></div>
+            <iframe id="myIframe" width="320" height="320" src="" frameborder="1"
+ allowfullscreen></iframe>
+        </div>
+  </body>
+</html>
