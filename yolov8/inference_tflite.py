@@ -79,7 +79,6 @@ try:
         # get the output tensor
         output_data = interpreter.get_tensor(output_details[0]['index'])
         output_data = torch.from_numpy(output_data)
-        print(sum(output_data[:, 4:5].flatten() > 0.0))
         results = boxes(output_data, args.confidence)
         
         for result in results: # draw bounding boxes

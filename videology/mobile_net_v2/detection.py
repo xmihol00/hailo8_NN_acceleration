@@ -11,8 +11,8 @@ import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="mobile_net_v2/ssd_mobilenet_v2_coco_quant_postprocess.tflite", help="Path to the model file")
-parser.add_argument("-i", "--images", type=str, default="coco_samples/", help="Path to the images directory")
 parser.add_argument("-l", "--labels", type=str, default="coco_labels.json", help="Path to the labels file")
+parser.add_argument("-i", "--images", type=str, default="coco_samples/", help="Path to the images directory")
 parser.add_argument("-d", "--delay", type=int, default=1000, help="Delay between frames, 0 means do not show output video.")
 
 args = parser.parse_args()
@@ -37,30 +37,23 @@ print(output_details)
 
 images = glob.glob(os.path.join(args.images, "*"))
 for imagePath in images:
-    # load the image
+    # load the image and resize it to the input shape
     image = cv2.imread(imagePath)
+    inputs = cv2.resize(image, (input_details[0]['shape'][1], input_details[0]['shape'][2]))
 
-    inputs = cv2.resize(image, (300, 300))
     # add a batch dimension
     inputs = np.expand_dims(inputs, axis=0)
-
     # set the input tensor
     interpreter.set_tensor(input_details[0]['index'], inputs)
-
     # perform inference
     interpreter.invoke()
 
     # get bounding boxes
     bounding_boxes = interpreter.get_tensor(output_details[0]['index'])
-    print(bounding_boxes)
-
     # get the confidence scores
     confidence_scores = interpreter.get_tensor(output_details[2]['index'])
-    print(confidence_scores)
-
     # get the class IDs
     class_ids = interpreter.get_tensor(output_details[1]['index'])
-    print(class_ids)
 
     for bounding_box, confidence_score, class_id in zip(bounding_boxes[0], confidence_scores[0], class_ids[0]):
         if confidence_score > 0.5:

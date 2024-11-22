@@ -7,7 +7,7 @@ import argparse
 import cv2
 import numpy as np
 
-def representative_dataset(X):
+def representative_dataset_from_video(X):
     while True:
         ret, frame = X.read()
         if not ret:
@@ -19,20 +19,27 @@ def representative_dataset(X):
         # add a batch dimension
         input_data = tf.expand_dims(frame_normalized, axis=0)
         input_data = tf.cast(input_data, tf.float32)
-        inputs = np.zeros((1, 3, 640, 640), dtype=np.float32)
+        input_data = tf.transpose(input_data, perm=[0, 3, 1, 2])
 
-        # convert the image from WHC to CHW
-        inputs[0, 0] = input_data[0, :, :, 2]
-        inputs[0, 1] = input_data[0, :, :, 1]
-        inputs[0, 2] = input_data[0, :, :, 0]
+        yield [input_data]
 
-        yield [inputs]
+def representative_dataset_from_file_list(X):
+    for file in X:
+        frame = cv2.imread(file)
+        print(file)
+        resized_frame = cv2.resize(frame, (640, 640))
+        frame_normalized = resized_frame / 255.0
+        input_data = tf.expand_dims(frame_normalized, axis=0)
+        input_data = tf.cast(input_data, tf.float32)
+        input_data = tf.transpose(input_data, perm=[0, 3, 1, 2])
+        yield [input_data]
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--model", type=str, default="models/yolov8m_plates_e25.pt", help="Path to the model file")
-parser.add_argument("-v", "--video", type=str, default="datasets/plates/test_img_per_frame.mp4", help="Path to the video file")
-parser.add_argument("-q", "--quantize", type=bool, default=True, help="Quantize the model")
-parser.add_argument("-o", "--onnx_export", type=bool, default=False, help="Quantize the model")
+parser.add_argument("-m", "--model", type=str, default="models/yolov8m_plates_e25.pt", help="Path to a model file")
+parser.add_argument("-v", "--video", type=str, default="", help="Path to a video file")
+parser.add_argument("-d", "--dataset", type=str, default="", help="Path to a dataset")
+parser.add_argument("-q", "--quantize", action="store_true", help="Quantize the model")
+parser.add_argument("-o", "--onnx_export", action="store_true", help="Perform onnx export")
 args = parser.parse_args()
 
 pb_model_name = args.model.replace(".pt", ".pb")
@@ -53,13 +60,23 @@ converter = tf.lite.TFLiteConverter.from_saved_model(pb_model_name)
 
 # convert onxx to tflite
 if args.quantize:
-    cap = cv2.VideoCapture(args.video)
+    if args.video != "":
+        cap = cv2.VideoCapture(args.video)
+    elif args.dataset != "":
+        files = os.listdir(args.dataset)
+        files = [os.path.join(args.dataset, file) for file in files]
+    else:
+        print("Please provide a video or dataset for quantization")
+        exit()
 
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.uint8
-    converter.inference_output_type = tf.int8
-    converter.representative_dataset = lambda x=cap: representative_dataset(x)
+    converter.inference_output_type = tf.float32
+    if args.video != "":
+        converter.representative_dataset = lambda x=cap: representative_dataset_from_video(x)
+    elif args.dataset != "":
+        converter.representative_dataset = lambda x=files: representative_dataset_from_file_list(x)
     tflite_model = converter.convert()
 
     tf_model_name = args.model.replace(".pt", "_quantized.tflite")
