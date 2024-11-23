@@ -1,11 +1,3 @@
-#!/usr/bin/env python
-########################################################
-#
-# WORKING OBJECT DETECTION OVER RTSP
-# 1280x720@30 or 1920x1080@24 with 10 ms INFERENCE TIME
-#
-# (C)2024 VIDEOLOGY INDUSTRIAL-GRADE CAMERAS
-########################################################
 import sys, getopt
 import numpy as np
 import os
@@ -17,6 +9,7 @@ gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GLib
 import json
 import tflite_runtime.interpreter as tf
+from time import time
 
 class InferenceDataFactory(GstRtspServer.RTSPMediaFactory):
     def __init__(self, args, **properties):
@@ -35,7 +28,7 @@ class InferenceDataFactory(GstRtspServer.RTSPMediaFactory):
         # create output stream
         self.launch_string = f'appsrc name=source is-live=true format=GST_FORMAT_TIME ' \
                              f'! video/x-raw,format=BGRA,width={args.width},height={args.height},framerate={args.fps}/1 ' \
-                             f'! vpuenc_h264 ' \
+                             f'! vpuenc_h264 bitrate=1000000 ' \
                              f'! rtph264pay config-interval=1 name=pay0 pt=96 '
         
         # setup execution delegate, if empty, uses CPU
@@ -59,6 +52,8 @@ class InferenceDataFactory(GstRtspServer.RTSPMediaFactory):
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()
         self.input_size = self.input_details[0]['shape']
+
+        self.last_time = time()
         
 
     def on_need_data(self, src, length):
@@ -108,7 +103,10 @@ class InferenceDataFactory(GstRtspServer.RTSPMediaFactory):
                 buf.pts = buf.dts = int(timestamp)
                 buf.offset = timestamp
                 self.number_frames += 1
-                print(f"Frame {self.number_frames} sent")
+                
+                if self.number_frames & 0x1F == 0:
+                    print(f"FPS: {32.0 / (time() - self.last_time)}")
+                    self.last_time = time()
 
                 retval = src.emit('push-buffer', buf)
                 if retval != Gst.FlowReturn.OK:
@@ -137,7 +135,7 @@ class RtspServer(GstRtspServer.RTSPServer):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", type=str, default="ssd_mobilenet_v2_quantized.tflite", help="Path to the model file")
-    parser.add_argument("-l", "--labels", type=str, default="coco_labels.json", help="Path to the labels file")
+    parser.add_argument("-l", "--labels", type=str, default="../coco_labels.json", help="Path to the labels file")
     parser.add_argument("-x", "--width", type=int, default=1920, help="Width of the captured video")
     parser.add_argument("-y", "--height", type=int, default=1080, help="Height of the captured video")
     parser.add_argument("-f", "--fps", type=int, default=30, help="Frames per second of the captured video")

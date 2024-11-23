@@ -10,9 +10,9 @@ import tensorflow as tf
 import json
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--model", type=str, default="mobile_net_v2/ssd_mobilenet_v2_coco_quant_postprocess.tflite", help="Path to the model file")
-parser.add_argument("-l", "--labels", type=str, default="coco_labels.json", help="Path to the labels file")
-parser.add_argument("-i", "--images", type=str, default="coco_samples/", help="Path to the images directory")
+parser.add_argument("-m", "--model", type=str, default="ssd_mobilenet_v2_coco_quant_postprocess.tflite", help="Path to the model file")
+parser.add_argument("-l", "--labels", type=str, default="../coco_labels.json", help="Path to the labels file")
+parser.add_argument("-i", "--images", type=str, default="../coco_samples/", help="Path to the images directory")
 parser.add_argument("-d", "--delay", type=int, default=1000, help="Delay between frames, 0 means do not show output video.")
 
 args = parser.parse_args()
