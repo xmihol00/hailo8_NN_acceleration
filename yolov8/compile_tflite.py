@@ -45,7 +45,7 @@ args = parser.parse_args()
 pb_model_name = args.model.replace(".pt", ".pb")
 if args.onnx_export:
     #convert pytorch to onnx
-    os.system(f"yolo export model={args.model} imgsz=640 format=onnx opset=11")
+    os.system(f"yolo export model={args.model} imgsz=320 format=onnx opset=11")
 
     # load the onnx model
     onnx_model_name = args.model.replace(".pt", ".onnx")
