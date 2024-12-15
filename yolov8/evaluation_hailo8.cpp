@@ -15,10 +15,13 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 using namespace std;
 using namespace hailort;
 using namespace cv;
+
+constexpr int NUMBER_OF_CLASSES = 80;
 
 struct Arguments
 {
@@ -27,7 +30,16 @@ struct Arguments
     string labelsDirPath;
     bool showImages;
     float confidenceThreshold;
+    float iouThreshold;
     int delay;
+};
+
+struct IoUs_TPs_FPs_FNs
+{
+    std::vector<float> IoUs;
+    int FPs;
+    int FNs;
+    int TPs;
 };
 
 Arguments parseArgs(int argc, char **argv)
@@ -58,6 +70,10 @@ Arguments parseArgs(int argc, char **argv)
         {
             args.confidenceThreshold = stof(argv[++i]);
         }
+        else if (string(argv[i]) == "--iou" || string(argv[i]) == "-t")
+        {
+            args.iouThreshold = stof(argv[++i]);
+        }
         else if (string(argv[i]) == "--show" || string(argv[i]) == "-s")
         {
             args.showImages = true;
@@ -74,6 +90,113 @@ Arguments parseArgs(int argc, char **argv)
     }
 
     return args;
+}
+
+IoUs_TPs_FPs_FNs compute_IoUs_TPs_FPs_FNs(
+    const std::vector<float>& gt_boxes,
+    const std::vector<float>& actual_boxes,
+    const std::vector<float>& confidences,
+    float conf_threshold = 0.0,
+    float iou_threshold = 0.5)
+{
+    // early exits
+    if (gt_boxes.empty() && actual_boxes.empty())
+    {
+        return {{}, 0, 0, 0};
+    }
+    else if (gt_boxes.empty())
+    {
+        return {std::vector<float>(actual_boxes.size() / 4, 0.0f), static_cast<int>(actual_boxes.size() / 4), 0, 0};
+    }
+    else if (actual_boxes.empty())
+    {
+        return {std::vector<float>(gt_boxes.size() / 4, 0.0f), 0, static_cast<int>(gt_boxes.size() / 4), 0};
+    }
+
+    std::vector<float> IoUs;
+    int tp = 0;
+    int fp = 0;
+    int fn = 0;
+    std::unordered_map<int, std::pair<float, int>> used_indices; // {gt_index: (max_iou, actual_index)}
+
+    for (size_t i = 0; i < actual_boxes.size() / 4; ++i)
+    {
+        float conf = confidences[i];
+        if (conf < conf_threshold)
+        {
+            continue;
+        }
+
+        float y1_1 = actual_boxes[i * 4 + 0];
+        float x1_1 = actual_boxes[i * 4 + 1];
+        float y2_1 = actual_boxes[i * 4 + 2];
+        float x2_1 = actual_boxes[i * 4 + 3];
+        float max_iou = 0.0f;
+        int max_index = -1;
+
+        for (size_t j = 0; j < gt_boxes.size() / 4; ++j)
+        {
+            float y1_2 = gt_boxes[j * 4 + 0];
+            float x1_2 = gt_boxes[j * 4 + 1];
+            float y2_2 = gt_boxes[j * 4 + 2];
+            float x2_2 = gt_boxes[j * 4 + 3];
+
+            // compute intersection
+            float inter_y1 = std::max(y1_1, y1_2);
+            float inter_x1 = std::max(x1_1, x1_2);
+            float inter_y2 = std::min(y2_1, y2_2);
+            float inter_x2 = std::min(x2_1, x2_2);
+
+            float inter_area = std::max(0.0f, inter_y2 - inter_y1) * std::max(0.0f, inter_x2 - inter_x1);
+
+            // compute union
+            float area1 = (y2_1 - y1_1) * (x2_1 - x1_1);
+            float area2 = (y2_2 - y1_2) * (x2_2 - x1_2);
+            float union_area = area1 + area2 - inter_area;
+
+            // compute IoU
+            float iou = union_area > 0.0f ? inter_area / union_area : 0.0f;
+
+            // update maximum IoU
+            if (iou > max_iou && iou > iou_threshold)
+            {
+                max_iou = iou;
+                max_index = static_cast<int>(j);
+            }
+        }
+
+        if (max_iou == 0.0f)
+        {
+            fp++;
+        }
+        else
+        {
+            if (used_indices.count(max_index))
+            {
+                if (max_iou > used_indices[max_index].first)
+                {
+                    fp++;
+                    IoUs[used_indices[max_index].second] = 0.0f; // reset previous IoU
+                    used_indices[max_index] = {max_iou, static_cast<int>(IoUs.size())};
+                }
+                else
+                {
+                    fp++;
+                }
+            }
+            else
+            {
+                tp++;
+                used_indices[max_index] = {max_iou, static_cast<int>(IoUs.size())};
+            }
+        }
+
+        IoUs.push_back(max_iou);
+    }
+
+    fn = static_cast<int>(gt_boxes.size() / 4) - tp;
+
+    return {IoUs, fp, fn, tp};
 }
 
 float computeIoU(const vector<float> &boxes1, const vector<float> &boxes2)
@@ -137,10 +260,15 @@ float computeIoU(const vector<float> &boxes1, const vector<float> &boxes2)
     return result.size() > 0 ? accumulate(result.begin(), result.end(), 0.0f) / result.size() : 0.0; // return the mean IoU
 }
 
-vector<float> loadBoxesFromFile(const string& filename)
+vector<vector<float>> loadBoxesFromFile(const string& filename)
 {
     ifstream file(filename);
-    vector<float> data;
+    vector<vector<float>> data;
+    for (int i = 0; i < NUMBER_OF_CLASSES; i++)
+    {
+        data.push_back({});
+    }
+
     string line;
 
     while (getline(file, line)) // read each line in the file
@@ -150,12 +278,13 @@ vector<float> loadBoxesFromFile(const string& filename)
 
         // parse a row
         iss >> classValue >> x >> y >> w >> h;
+        int classIndex = static_cast<int>(classValue);
 
-        // sort the values
-        data.push_back(y - h / 2);
-        data.push_back(x - w / 2);
-        data.push_back(y + h / 2);
-        data.push_back(x + w / 2);
+        // insert the bounding box coordinates
+        data[classIndex].push_back(y - h / 2);
+        data[classIndex].push_back(x - w / 2);
+        data[classIndex].push_back(y + h / 2);
+        data[classIndex].push_back(x + w / 2);
     }
 
     return data;
@@ -233,13 +362,15 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
     InputVStream &inputStream = inputStreams[0];
     size_t inputSize = inputStream.get_frame_size();
 
-    double totalIoU = 0.0f;
-    size_t numImages = 0;
+    vector<float> IoUs;
+    float TPs = 0;
+    float FPs = 0;
+    float FNs = 0;
+
     for (const auto& entry : filesystem::directory_iterator(args.imagesDirPath))
     {
         if (entry.path().extension() == ".jpg")
         {
-            numImages++;
             string imageFilename = entry.path().filename().string();
             string labelFilename = args.labelsDirPath + imageFilename.replace(imageFilename.find(".jpg"), 4, ".txt");
 
@@ -248,73 +379,81 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
 
             // resize image
             cv::resize(frame, frame, cv::Size(640, 640));
-            
-            // load bounding boxes from file - ground truth
-            vector<float> boxes1 = loadBoxesFromFile(labelFilename);
-            if (args.showImages)
-            {
-                for (size_t i = 0; i < boxes1.size(); i += 4)
-                {
-                    int y1 = boxes1[i] * frame.cols;
-                    int x1 = boxes1[i + 1] * frame.rows;
-                    int y2 = boxes1[i + 2] * frame.cols;
-                    int x2 = boxes1[i + 3] * frame.rows;
 
-                    cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
-                    cv::rectangle(frame, rect, cv::Scalar(0, 0, 255), 2);
-                }
-            }
-            
             // write input data to hailo8
             hailo_status status = inputStream.write(MemoryView(frame.data, inputSize));
             if (status != HAILO_SUCCESS)
             {
                 throw runtime_error("Failed to write input stream.");
             }
+            
+            // load bounding boxes from file - ground truth
+            vector<vector<float>> boxes1 = loadBoxesFromFile(labelFilename);
+            if (args.showImages)
+            {
+                for (vector<float> &classBoxes : boxes1)
+                {
+                    for (size_t i = 0; i < classBoxes.size(); i += 4)
+                    {
+                        int y1 = classBoxes[i] * frame.cols;
+                        int x1 = classBoxes[i + 1] * frame.rows;
+                        int y2 = classBoxes[i + 2] * frame.cols;
+                        int x2 = classBoxes[i + 3] * frame.rows;
 
+                        cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
+                        cv::rectangle(frame, rect, cv::Scalar(0, 0, 255), 2);
+                    }
+                }
+            }
+            
             // read output data from hailo8
             OutputVStream &outputStream = outputStreams[0];
             vector<float> output(outputStream.get_frame_size());
-            cerr << "Frame size: " << output.size() << endl;
             status = outputStream.read(MemoryView(output.data(), output.size()));
-            for (int i = 0; i < output.size(); i++)
-            {
-                cerr << output[i] << " ";
-            }
-            cerr << endl;
 
             if (status != HAILO_SUCCESS)
             {
                 throw runtime_error("Failed to read output stream.");
             }
 
-            // parse output data
-            int numberOfBoxes = static_cast<int>(output[0]);
-            float *rawBoxes = output.data() + 1;
-            vector<float> boxes2;
-
-            // retrieve bounding boxes
-            for (int i = 0; i < numberOfBoxes; i += 5)
+            vector<vector<float>> boxes2;
+            vector<vector<float>> confidences;
+            unsigned outputIdx = 0;
+            for (int i = 0; i < NUMBER_OF_CLASSES; i++)
             {
-                if (rawBoxes[i + 4] > args.confidenceThreshold)
+                int numberOfBoxes = static_cast<int>(output[outputIdx]);
+                outputIdx++;
+                float *rawBoxes = output.data() + outputIdx;
+
+                boxes2.push_back({});
+                confidences.push_back({});
+
+                // retrieve bounding boxes and confidences
+                for (int j = 0; j < numberOfBoxes * 5; j += 5)
                 {
-
-                    boxes2.push_back(rawBoxes[i]);
-                    boxes2.push_back(rawBoxes[i + 1]);
-                    boxes2.push_back(rawBoxes[i + 2]);
-                    boxes2.push_back(rawBoxes[i + 3]);
-                    
-                    if (args.showImages)
+                    if (rawBoxes[j + 4] > args.confidenceThreshold)
                     {
-                        int y1 = rawBoxes[i] * frame.cols;
-                        int x1 = rawBoxes[i + 1] * frame.rows;
-                        int y2 = rawBoxes[i + 2] * frame.cols;
-                        int x2 = rawBoxes[i + 3] * frame.rows;
+                        boxes2[i].push_back(rawBoxes[j]);
+                        boxes2[i].push_back(rawBoxes[j + 1]);
+                        boxes2[i].push_back(rawBoxes[j + 2]);
+                        boxes2[i].push_back(rawBoxes[j + 3]);
+                        confidences[i].push_back(rawBoxes[j + 4]);
 
-                        cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
-                        cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
+                        if (args.showImages)
+                        {
+                            int y1 = rawBoxes[j] * frame.cols;
+                            int x1 = rawBoxes[j + 1] * frame.rows;
+                            int y2 = rawBoxes[j + 2] * frame.cols;
+                            int x2 = rawBoxes[j + 3] * frame.rows;
+
+                            cv::Rect rect(cv::Point(x1, y1), cv::Point(x2, y2));
+                            cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 2);
+                        }
                     }
                 }
+
+                // move to the next class
+                outputIdx += numberOfBoxes * 5;
             }
 
             if (args.showImages)
@@ -326,14 +465,26 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
                 }
             }
 
-            float iou = computeIoU(boxes1, boxes2);
-            totalIoU += iou;
-            cerr << "IoU for " << imageFilename << ": " << iou << endl;
+            for (int i = 0; i < NUMBER_OF_CLASSES; i++)
+            {
+                IoUs_TPs_FPs_FNs results = compute_IoUs_TPs_FPs_FNs(boxes1[i], boxes2[i], confidences[i], args.confidenceThreshold, args.iouThreshold);
+                IoUs.insert(IoUs.end(), results.IoUs.begin(), results.IoUs.end());
+                TPs += results.TPs;
+                FPs += results.FPs;
+                FNs += results.FNs;
+            }
         }
     }
 
-    double meanIoU = totalIoU / numImages;
-    cout << "\nMean IoU: " << meanIoU << endl;
+    float meanIoU = IoUs.size() > 0 ? accumulate(IoUs.begin(), IoUs.end(), 0.0f) / IoUs.size() : 0.0f;
+    float precision = TPs / (TPs + FPs + 1e-6);
+    float recall = TPs / (TPs + FNs + 1e-6);
+    float f1 = 2 * precision * recall / (precision + recall);
+
+    cout << "Average IoU: " << meanIoU << endl;
+    cout << "Precision:   " << precision << endl;
+    cout << "Recall:      " << recall << endl;
+    cout << "F1 Score:    " << f1 << endl;
 }
 
 int main(int argc, char **argv)

@@ -1,0 +1,11 @@
+yolov8m pretrained:
+  Average IoU: 0.3565
+  Precision: 0.6210
+  Recall: 0.3760
+  F1 Score: 0.4684
+
+33 epochs:
+  Average IoU: 0.3082
+  Precision: 0.6401
+  Recall: 0.3156
+  F1 Score: 0.4228
