@@ -33,9 +33,9 @@ struct Arguments
 Arguments parseArgs(int argc, char **argv)
 {
     Arguments args;
-    args.modelPath = "models/yolov8m_plates_e25.hef";
-    args.imagesDirPath = "./datasets/plates/test/images/";
-    args.labelsDirPath = "./datasets/plates/test/labels/";
+    args.modelPath = "models/yolov8m.hef";
+    args.imagesDirPath = "./datasets/coco/val_images/";
+    args.labelsDirPath = "./datasets/coco/val_labels/";
     args.confidenceThreshold = 0.5;
     args.showImages = false;
     args.delay = 500;
@@ -78,6 +78,15 @@ Arguments parseArgs(int argc, char **argv)
 
 float computeIoU(const vector<float> &boxes1, const vector<float> &boxes2)
 {
+    if (boxes1.empty() && boxes2.empty())
+    {
+        return 1.0f;
+    }
+    else if (boxes1.empty() || boxes2.empty())
+    {
+        return 0.0f;
+    }
+
     vector<float> result;
 
     size_t numberOfBoxes1 = boxes1.size() / 4;
@@ -236,6 +245,9 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
 
             // load image
             cv::Mat frame = cv::imread(entry.path().string());
+
+            // resize image
+            cv::resize(frame, frame, cv::Size(640, 640));
             
             // load bounding boxes from file - ground truth
             vector<float> boxes1 = loadBoxesFromFile(labelFilename);
@@ -263,7 +275,14 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
             // read output data from hailo8
             OutputVStream &outputStream = outputStreams[0];
             vector<float> output(outputStream.get_frame_size());
+            cerr << "Frame size: " << output.size() << endl;
             status = outputStream.read(MemoryView(output.data(), output.size()));
+            for (int i = 0; i < output.size(); i++)
+            {
+                cerr << output[i] << " ";
+            }
+            cerr << endl;
+
             if (status != HAILO_SUCCESS)
             {
                 throw runtime_error("Failed to read output stream.");
@@ -300,7 +319,7 @@ void runInference(ConfiguredNetworkGroup &model, vector<InputVStream> &inputStre
 
             if (args.showImages)
             {
-                cv::imshow("YOLOv8 License Plate Detection", frame);
+                cv::imshow("YOLOv8 Detection", frame);
                 if (cv::waitKey(args.delay) == 'q')
                 {
                     break;

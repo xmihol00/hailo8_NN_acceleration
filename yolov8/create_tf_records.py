@@ -90,14 +90,14 @@ def create_tfrecord(filenames, label_dir, tfrecords_filename, num_images):
 
     return i + 1
 
-dataset_name = "humans"
+dataset_name = "plates"
 dataset_type = "train"
 val_image_dir = f"datasets/{dataset_name}/{dataset_type}/images"
 label_dir = f"datasets/{dataset_name}/{dataset_type}/labels"
 
 image_filenames = [os.path.join(val_image_dir, fname) for fname in os.listdir(val_image_dir) if fname.endswith('.jpg')]
 image_filenames.sort()
-num_images = len(image_filenames) if len(image_filenames) < 1024 else 1024
+num_images = len(image_filenames) if len(image_filenames) < 2048 else 2048
 output_name = f"datasets/{dataset_name}/{dataset_type}.tfrecord"
 
 create_tfrecord(image_filenames, label_dir, output_name, num_images)

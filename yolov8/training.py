@@ -1,11 +1,19 @@
 from ultralytics import YOLO
-import torch.quantization as quant
 import torch
+import ultralytics.nn.modules.conv as nn
+import ultralytics
 
-model = YOLO("models/yolov8m.pt").to("cpu")                                        # load a pretrained model
-model.qconfig = quant.get_default_qat_qconfig('fbgemm')                            # set the quantization configuration
-model = quant.prepare_qat(model, inplace=True)                                     # prepare the model for quantization
-results = model.train(data="datasets/plates/data.yaml", epochs=0, int8=True)       # train the model
-model = quant.convert(model, inplace=True)                                         # convert the model to a quantized model
-metrics = model.val()                                                              # evaluate model performance on the validation set
-torch.jit.save(torch.jit.script(model), 'quantized_model.pth')                     # save the quantized model
+model = YOLO("yolov8s.yaml")
+model.eval()
+
+for m in model.modules():
+    if type(m) is nn.Conv and hasattr(m, 'bn'):
+        torch.ao.quantization.fuse_modules(m, [["conv", "bn"]], True)
+model.model.train()
+model.model = model.model.float()
+print(next(model.model.parameters()).device)
+
+model.qconfig = torch.quantization.get_default_qconfig("fbgemm")
+torch.quantization.prepare_qat(model.model, inplace=True)
+results = model.train(data="/home/david/projs/hailo8_NN_acceleration/yolov8/datasets/plates/data.yaml", epochs=1, batch=2, imgsz=640, lr0=0.01, lrf=0.001, device=0, amp=False)
+
