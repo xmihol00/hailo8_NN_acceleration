@@ -1,0 +1,48 @@
+25 epochs QAT hailo8 small calibration:
+  Average IoU: 0.404077
+  Precision: 0.865269
+  Recall: 0.383789
+  F1 Score: 0.531739
+
+25 epochs FP hailo8 small calibration:
+  Average IoU: 0.390898
+  Precision: 0.88254
+  Recall: 0.36919
+  F1 Score: 0.520599
+
+25 epochs QAT hailo8 large calibration:
+  Average IoU: 0.409955
+  Precision: 0.864706
+  Recall: 0.390438
+  F1 Score: 0.537969
+
+25 epochs FP hailo8 large calibration:
+  Average IoU: 0.396217
+  Precision: 0.88
+  Recall: 0.379814
+  F1 Score: 0.530612
+
+
+50 epochs QAT hailo8 small calibration:
+  Average IoU: 0.453719
+  Precision: 0.85422
+  Recall: 0.443559
+  F1 Score: 0.583916
+
+50 epochs FP hailo8 small calibration:
+  Average IoU: 0.426251
+  Precision: 0.843243
+  Recall: 0.414343
+  F1 Score: 0.555655
+
+50 epochs QAT hailo8 large calibration:
+  Average IoU: 0.464054
+  Precision: 0.841346
+  Recall: 0.464807
+  F1 Score: 0.598802
+
+50 epochs FP hailo8 large calibration:
+  Average IoU: 0.43411
+  Precision: 0.836788
+  Recall: 0.428951
+  F1 Score: 0.567164

@@ -1,0 +1,9 @@
+model,average IoU,precision,recall,F1
+25 epochs QAT hailo8 small calibration,0.404077,0.865269,0.383789,0.531739
+25 epochs FP hailo8 small calibration,0.390898,0.88254,0.36919,0.520599
+25 epochs QAT hailo8 large calibration,0.409955,0.864706,0.390438,0.537969
+25 epochs FP hailo8 large calibration,0.396217,0.88,0.379814,0.530612
+50 epochs QAT hailo8 small calibration,0.453719,0.85422,0.443559,0.583916
+50 epochs FP hailo8 small calibration,0.426251,0.843243,0.414343,0.555655
+50 epochs QAT hailo8 large calibration,0.464054,0.841346,0.464807,0.598802
+50 epochs FP hailo8 large calibration,0.43411,0.836788,0.428951,0.567164

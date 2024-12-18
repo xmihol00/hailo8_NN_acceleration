@@ -9,4 +9,4 @@ fi
 #hailomz parse --ckpt models/$model_name.onnx --hw-arch hailo8 --yaml yolov8m.yaml
 #hailomz optimize --har yolov8m.har --classes 1 --calib-path datasets/humans/train.tfrecord --yaml yolov8m.yaml
 #hailomz eval --har yolov8m.har --calib-path datasets/humans/train.tfrecord --yaml yolov8m.yaml --data-path datasets/humans/train.tfrecord
-hailomz compile --ckpt models/$model_name.onnx --calib-path datasets/coco/calib_small --yaml hailo_yolov8m.yaml --classes 80 --hw-arch hailo8
+hailomz compile --ckpt models/$model_name.onnx --calib-path datasets/coco/calib_large --yaml hailo_yolov8m.yaml --classes 80 --hw-arch hailo8

@@ -49,6 +49,7 @@ Arguments parseArgs(int argc, char **argv)
     args.imagesDirPath = "./datasets/coco/val_images/";
     args.labelsDirPath = "./datasets/coco/val_labels/";
     args.confidenceThreshold = 0.5;
+    args.iouThreshold = 0.0;
     args.showImages = false;
     args.delay = 500;
 

@@ -9,7 +9,7 @@ import argparse
 import os
 import yaml
 
-def compute_IoUs_TPs_FPs_FNs(gt_boxes, actual_boxes, confidences, conf_threshold=0.0, iou_threshold=0.5):
+def compute_IoUs_TPs_FPs_FNs(gt_boxes, actual_boxes, confidences, conf_threshold=0.5, iou_threshold=0.0):
     if len(gt_boxes) == 0 and len(actual_boxes) == 0:
         return [], 0, 0, 0
     elif len(gt_boxes) == 0:
